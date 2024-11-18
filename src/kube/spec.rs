@@ -9,12 +9,13 @@ pub enum EnvKind {
 
 #[derive(Default)]
 pub struct ContainerEnv {
-    name: String,
-    envs: HashMap<String, EnvKind>,
+    pub name: String,
+    pub envs: HashMap<String, EnvKind>,
 }
 
 pub trait SpecHandler {
     fn get_env(&self) -> Result<Vec<ContainerEnv>>;
+    fn rebuild_env(&mut self, envs: Vec<ContainerEnv>) -> Result<()>;
 }
 
 impl SpecHandler for JobSpec {
@@ -57,5 +58,43 @@ impl SpecHandler for JobSpec {
         }
 
         Ok(containers_env)
+    }
+
+    fn rebuild_env(&mut self, envs: Vec<ContainerEnv>) -> Result<()> {
+        let pod_spec = self
+            .template
+            .spec
+            .as_mut()
+            .ok_or_else(|| anyhow!("Unable to found pod spec on job"))?;
+
+        for (idx, container) in pod_spec.containers.iter_mut().enumerate() {
+            let Some(updated_env) =
+                envs.get(idx)
+                    .and_then(|cont| match cont.name != container.name {
+                        true => Some(cont),
+                        false => None,
+                    })
+            else {
+                return Err(anyhow!(
+                    "Unable to get the environment variable for the container {:?}",
+                    container.name
+                ));
+            };
+
+            if let Some(container_envs) = container.env.as_mut() {
+                for container_env in container_envs {
+                    if let Some(value) = updated_env.envs.get(&container_env.name) {
+                        match value {
+                            EnvKind::Literal(value) => container_env.value = Some(value.clone()),
+                            EnvKind::ConfigMap(value) => {
+                                container_env.value_from = Some(value.clone())
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
     }
 }

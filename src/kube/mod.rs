@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Result};
-use k8s_openapi::api::batch::v1::{CronJob, Job, JobTemplateSpec};
+use k8s_openapi::api::batch::v1::{CronJob, Job, JobSpec, JobTemplateSpec};
 use kube::{
     api::{Api, PostParams},
     Client,
@@ -45,10 +45,10 @@ where
         Ok(spec)
     }
 
-    async fn build_manual_job<N: AsRef<str>>(
+    pub async fn build_manual_job<N: AsRef<str>>(
         &self,
         name: N,
-        job_spec: JobTemplateSpec,
+        job_spec: JobSpec,
         backoff_limit: usize,
     ) -> Result<()> {
         let job_api: Api<Job> = Api::namespaced(self.client.clone(), self.namespace.as_ref());
@@ -57,13 +57,13 @@ where
             "apiVersion": "v1",
             "kind": "Job",
             "metadata": {
-                "name": name.as_ref()
+                "name": format!("{}-manual", name.as_ref())
             },
             "spec": {},
             "backoffLimit": backoff_limit
         }))?;
 
-        job.spec = job_spec.spec;
+        job.spec = Some(job_spec);
 
         let pp = PostParams::default();
         if let Ok(res) = job_api.create(&pp, &job).await {
