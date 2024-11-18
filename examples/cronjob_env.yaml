@@ -1,0 +1,22 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: example-cronjob
+  namespace: default
+spec:
+  schedule: "0 */6 * * *" # Runs every 6 hours
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+            - name: example-container
+              image: alpine:3.17 # Replace with your desired image
+              command:
+                ["/bin/sh", "-c", "echo Hello, World! && echo $MY_ENV_VAR"]
+              env:
+                - name: MY_ENV_VAR
+                  value: "This is an environment variable"
+                - name: ANOTHER_ENV_VAR
+                  value: "Another variable value"
+          restartPolicy: OnFailu

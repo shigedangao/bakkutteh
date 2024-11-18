@@ -52,15 +52,20 @@ impl SpecHandler for JobSpec {
                     .collect();
 
                 cont_env.envs = envs;
-            }
 
-            containers_env.push(cont_env);
+                containers_env.push(cont_env);
+            }
         }
 
         Ok(containers_env)
     }
 
     fn rebuild_env(&mut self, envs: Vec<ContainerEnv>) -> Result<()> {
+        // If no env is to be found then there's no need to rebuild the environment variable
+        if envs.is_empty() {
+            return Ok(());
+        }
+
         let pod_spec = self
             .template
             .spec
@@ -70,7 +75,7 @@ impl SpecHandler for JobSpec {
         for (idx, container) in pod_spec.containers.iter_mut().enumerate() {
             let Some(updated_env) =
                 envs.get(idx)
-                    .and_then(|cont| match cont.name != container.name {
+                    .and_then(|cont| match cont.name == container.name {
                         true => Some(cont),
                         false => None,
                     })

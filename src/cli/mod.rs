@@ -13,10 +13,13 @@ pub struct Cli {
     #[arg(short, long)]
     job_name: String,
 
+    #[arg(short, long)]
+    target_name: Option<String>,
+
     #[arg(short, long, default_value = "default")]
     pub namespace: String,
 
-    #[arg(short, long, default_value = 3)]
+    #[arg(short, long, default_value = "3")]
     pub backoff_limit: usize,
 }
 
@@ -38,7 +41,14 @@ impl Cli {
         // Rebuild the job spec with the updated environment variables
         job_spec.rebuild_env(envs)?;
 
-        kube_handler.build_manual_job(&self.job_name, job_spec, self.backoff_limit);
+        let name = match &self.target_name {
+            Some(name) => name,
+            None => &self.job_name,
+        };
+
+        kube_handler
+            .build_manual_job(&name, job_spec, self.backoff_limit)
+            .await?;
 
         Ok(())
     }

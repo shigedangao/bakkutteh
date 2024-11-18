@@ -1,4 +1,5 @@
 use anyhow::{anyhow, Result};
+use colored::{self, Colorize};
 use k8s_openapi::api::batch::v1::{CronJob, Job, JobSpec, JobTemplateSpec};
 use kube::{
     api::{Api, PostParams},
@@ -28,6 +29,12 @@ where
     }
 
     pub async fn get_cronjob_spec<N: AsRef<str>>(&self, name: N) -> Result<JobTemplateSpec> {
+        println!(
+            "Getting cronjob {} from namespace {}",
+            name.as_ref().truecolor(7, 174, 237).bold(),
+            self.namespace.as_ref().truecolor(133, 59, 255).bold()
+        );
+
         let cronjobs: Api<CronJob> = Api::namespaced(self.client.clone(), self.namespace.as_ref());
         let targeted_cronjob = cronjobs.get(name.as_ref()).await?;
 
@@ -48,26 +55,37 @@ where
     pub async fn build_manual_job<N: AsRef<str>>(
         &self,
         name: N,
-        job_spec: JobSpec,
+        mut job_spec: JobSpec,
         backoff_limit: usize,
     ) -> Result<()> {
         let job_api: Api<Job> = Api::namespaced(self.client.clone(), self.namespace.as_ref());
 
         let mut job: Job = serde_json::from_value(json!({
-            "apiVersion": "v1",
+            "apiVersion": "batch/v1",
             "kind": "Job",
             "metadata": {
                 "name": format!("{}-manual", name.as_ref())
             },
-            "spec": {},
-            "backoffLimit": backoff_limit
+            "spec": {}
         }))?;
 
+        job_spec.backoff_limit = Some(backoff_limit as i32);
         job.spec = Some(job_spec);
 
         let pp = PostParams::default();
-        if let Ok(res) = job_api.create(&pp, &job).await {
-            println!("Job {:?} created", res.metadata.name)
+        match job_api.create(&pp, &job).await {
+            Ok(res) => println!(
+                "Job {} created",
+                res.metadata
+                    .name
+                    .unwrap_or_default()
+                    .truecolor(7, 174, 237)
+                    .bold()
+            ),
+            Err(err) => println!(
+                "Unable to create job due to error: {}",
+                err.to_string().red().bold()
+            ),
         };
 
         Ok(())
