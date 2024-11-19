@@ -24,7 +24,7 @@ pub struct Cli {
     pub namespace: String,
 
     #[arg(short, long, default_value = "3")]
-    pub backoff_limit: usize,
+    pub backoff_limit: i32,
 }
 
 impl Cli {

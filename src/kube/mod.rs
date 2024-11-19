@@ -75,7 +75,7 @@ where
         &mut self,
         name: N,
         mut job_spec: JobSpec,
-        backoff_limit: usize,
+        backoff_limit: i32,
     ) -> Result<&Self> {
         let mut job: Job = serde_json::from_value(json!({
             "apiVersion": "batch/v1",
@@ -86,7 +86,7 @@ where
             "spec": {}
         }))?;
 
-        job_spec.backoff_limit = Some(backoff_limit as i32);
+        job_spec.backoff_limit = Some(backoff_limit);
         job.spec = Some(job_spec);
 
         self.job = Some(job);

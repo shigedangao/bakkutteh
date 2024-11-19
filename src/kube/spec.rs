@@ -73,18 +73,21 @@ impl SpecHandler for JobSpec {
             .ok_or_else(|| anyhow!("Unable to found pod spec on job"))?;
 
         for (idx, container) in pod_spec.containers.iter_mut().enumerate() {
-            let Some(updated_env) =
-                envs.get(idx)
+            let updated_env =
+                match envs
+                    .get(idx)
                     .and_then(|cont| match cont.name == container.name {
                         true => Some(cont),
                         false => None,
-                    })
-            else {
-                return Err(anyhow!(
-                    "Unable to get the environment variable for the container {:?}",
-                    container.name
-                ));
-            };
+                    }) {
+                    Some(updated_env) => updated_env,
+                    None => {
+                        return Err(anyhow!(
+                            "Unable to get the environment variable for the container {:?}",
+                            container.name
+                        ));
+                    }
+                };
 
             if let Some(container_envs) = container.env.as_mut() {
                 for container_env in container_envs {
