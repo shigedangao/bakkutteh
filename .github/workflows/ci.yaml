@@ -1,4 +1,4 @@
-name: tests
+name: ci
 
 on: [push]
 
@@ -11,11 +11,3 @@ jobs:
         run: rustup component add clippy
       - name: clippy
         run: cargo clippy --all-features
-
-  fmt:
-    runs-on: ubuntu-latest
-    container: rust:slim
-    steps:
-      - uses: olix0r/cargo-action-fmt/setup@v2
-      - uses: actions/checkout@v2
-      - run: cargo fmt -q --message-format=json | cargo-action-fmt
