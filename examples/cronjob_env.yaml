@@ -19,4 +19,4 @@ spec:
                   value: "This is an environment variable"
                 - name: ANOTHER_ENV_VAR
                   value: "Another variable value"
-          restartPolicy: OnFailu
+          restartPolicy: OnFailure

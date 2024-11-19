@@ -2,6 +2,7 @@ use crate::kube::spec::{ContainerEnv, EnvKind, SpecHandler};
 use crate::kube::KubeHandler;
 use anyhow::{anyhow, Result};
 use clap::Parser;
+use colored::Colorize;
 use inquire::Text;
 
 #[derive(Parser)]
@@ -16,6 +17,9 @@ pub struct Cli {
     #[arg(short, long)]
     target_name: Option<String>,
 
+    #[arg(short, long, default_value = "false")]
+    dry_run: bool,
+
     #[arg(short, long, default_value = "default")]
     pub namespace: String,
 
@@ -24,7 +28,7 @@ pub struct Cli {
 }
 
 impl Cli {
-    pub async fn run<S: AsRef<str>>(&self, kube_handler: &KubeHandler<S>) -> Result<()> {
+    pub async fn run<S: AsRef<str>>(&self, kube_handler: &mut KubeHandler<S>) -> Result<()> {
         // Get the targeted cronjob
         let job_tmpl_spec = kube_handler.get_cronjob_spec(&self.job_name).await?;
 
@@ -47,7 +51,8 @@ impl Cli {
         };
 
         kube_handler
-            .build_manual_job(&name, job_spec, self.backoff_limit)
+            .build_manual_job(&name, job_spec, self.backoff_limit)?
+            .apply_manual_job(self.dry_run)
             .await?;
 
         Ok(())
@@ -57,7 +62,7 @@ impl Cli {
         for container in envs {
             for (name, kind) in &mut container.envs {
                 if let EnvKind::Literal(literal) = kind {
-                    if let Ok(res) = Text::new(&format!("Env for {}: ", name))
+                    if let Ok(res) = Text::new(&format!("Env for {}: ", name.bright_cyan()))
                         .with_default(&literal)
                         .prompt()
                     {

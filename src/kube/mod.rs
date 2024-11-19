@@ -13,21 +13,33 @@ pub(crate) mod spec;
 pub struct KubeHandler<S: AsRef<str>> {
     client: Client,
     namespace: S,
+    job: Option<Job>,
 }
 
 impl<S> KubeHandler<S>
 where
     S: AsRef<str>,
 {
+    /// Create a new instance of the KubeHandler
+    ///
+    /// # Arguments
+    ///
+    /// * `ns` - S
     pub async fn new(ns: S) -> Result<Self> {
         let client = Client::try_default().await?;
 
         Ok(Self {
             client,
             namespace: ns,
+            job: None,
         })
     }
 
+    /// Get a cronjob spec for the targeted cronjob name
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - N
     pub async fn get_cronjob_spec<N: AsRef<str>>(&self, name: N) -> Result<JobTemplateSpec> {
         println!(
             "Getting cronjob {} from namespace {}",
@@ -52,14 +64,19 @@ where
         Ok(spec)
     }
 
-    pub async fn build_manual_job<N: AsRef<str>>(
-        &self,
+    /// Build a manual job from the cronjob job spec
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - N
+    /// * `job_spec` - JobSpec
+    /// * `backoff_limit` - BackoffLimit for the job
+    pub fn build_manual_job<N: AsRef<str>>(
+        &mut self,
         name: N,
         mut job_spec: JobSpec,
         backoff_limit: usize,
-    ) -> Result<()> {
-        let job_api: Api<Job> = Api::namespaced(self.client.clone(), self.namespace.as_ref());
-
+    ) -> Result<&Self> {
         let mut job: Job = serde_json::from_value(json!({
             "apiVersion": "batch/v1",
             "kind": "Job",
@@ -72,16 +89,44 @@ where
         job_spec.backoff_limit = Some(backoff_limit as i32);
         job.spec = Some(job_spec);
 
-        let pp = PostParams::default();
-        match job_api.create(&pp, &job).await {
-            Ok(res) => println!(
-                "Job {} created",
-                res.metadata
-                    .name
-                    .unwrap_or_default()
-                    .truecolor(7, 174, 237)
-                    .bold()
-            ),
+        self.job = Some(job);
+
+        Ok(self)
+    }
+
+    /// Apply the manual job in K8S
+    pub async fn apply_manual_job(&self, dry_run: bool) -> Result<()> {
+        let job_api: Api<Job> = Api::namespaced(self.client.clone(), self.namespace.as_ref());
+        let mut pp = PostParams::default();
+
+        if dry_run {
+            pp.dry_run = true;
+        }
+
+        let Some(job) = &self.job else {
+            return Err(anyhow!("Unable to create the job as building spec failed"));
+        };
+
+        match job_api.create(&pp, job).await {
+            Ok(res) => match dry_run {
+                true => {
+                    let yaml = serde_yaml::to_string(&res)?;
+                    println!(
+                        "\nDry run result for job {}",
+                        res.metadata.name.unwrap_or_default().bright_purple().bold()
+                    );
+
+                    println!("\n{}", yaml)
+                }
+                false => println!(
+                    "Job {} created",
+                    res.metadata
+                        .name
+                        .unwrap_or_default()
+                        .truecolor(7, 174, 237)
+                        .bold()
+                ),
+            },
             Err(err) => println!(
                 "Unable to create job due to error: {}",
                 err.to_string().red().bold()
