@@ -1,10 +1,10 @@
 use anyhow::{anyhow, Result};
 use k8s_openapi::api::{batch::v1::JobSpec, core::v1::EnvVarSource};
-use std::collections::HashMap;
+use std::{collections::HashMap, ops::Deref};
 
 pub enum EnvKind {
     Literal(String),
-    ConfigMap(EnvVarSource),
+    ConfigMap(Box<EnvVarSource>),
 }
 
 #[derive(Default)]
@@ -36,7 +36,7 @@ impl SpecHandler for JobSpec {
 
             if let Some(env) = &container.env {
                 let envs: HashMap<String, EnvKind> = env
-                    .into_iter()
+                    .iter()
                     .filter_map(|e| {
                         let name = e.name.to_owned();
                         if let Some(literal) = e.value.to_owned() {
@@ -44,7 +44,7 @@ impl SpecHandler for JobSpec {
                         }
 
                         if let Some(c) = e.value_from.to_owned() {
-                            return Some((name, EnvKind::ConfigMap(c)));
+                            return Some((name, EnvKind::ConfigMap(Box::new(c))));
                         }
 
                         None
@@ -92,7 +92,7 @@ impl SpecHandler for JobSpec {
                         match value {
                             EnvKind::Literal(value) => container_env.value = Some(value.clone()),
                             EnvKind::ConfigMap(value) => {
-                                container_env.value_from = Some(value.clone())
+                                container_env.value_from = Some(value.deref().clone())
                             }
                         }
                     }

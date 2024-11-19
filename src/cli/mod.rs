@@ -51,7 +51,7 @@ impl Cli {
         };
 
         kube_handler
-            .build_manual_job(&name, job_spec, self.backoff_limit)?
+            .build_manual_job(name, job_spec, self.backoff_limit)?
             .apply_manual_job(self.dry_run)
             .await?;
 
@@ -63,7 +63,7 @@ impl Cli {
             for (name, kind) in &mut container.envs {
                 if let EnvKind::Literal(literal) = kind {
                     if let Ok(res) = Text::new(&format!("Env for {}: ", name.bright_cyan()))
-                        .with_default(&literal)
+                        .with_default(literal)
                         .prompt()
                     {
                         *kind = EnvKind::Literal(res);
