@@ -2,7 +2,7 @@ use anyhow::{anyhow, Result};
 use colored::{self, Colorize};
 use k8s_openapi::api::batch::v1::{CronJob, Job, JobSpec, JobTemplateSpec};
 use kube::{
-    api::{Api, PostParams},
+    api::{Api, ListParams, PostParams},
     Client,
 };
 use serde_json::json;
@@ -64,6 +64,22 @@ where
         Ok(spec)
     }
 
+    /// List cronjob available in the selected namespace
+    pub async fn list_cronjob(&self) -> Result<Vec<String>> {
+        let cronjobs: Api<CronJob> = Api::namespaced(self.client.clone(), self.namespace.as_ref());
+
+        let lp = ListParams::default();
+        let list = cronjobs.list(&lp).await?;
+
+        let cronjob_list = list
+            .items
+            .into_iter()
+            .filter_map(|item| item.metadata.name)
+            .collect::<Vec<_>>();
+
+        Ok(cronjob_list)
+    }
+
     /// Build a manual job from the cronjob job spec
     ///
     /// # Arguments
@@ -95,6 +111,10 @@ where
     }
 
     /// Apply the manual job in K8S
+    ///
+    /// # Arguments
+    ///
+    /// * `dry_run` - bool
     pub async fn apply_manual_job(&self, dry_run: bool) -> Result<()> {
         let job_api: Api<Job> = Api::namespaced(self.client.clone(), self.namespace.as_ref());
         let mut pp = PostParams::default();

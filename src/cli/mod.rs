@@ -3,19 +3,23 @@ use crate::kube::KubeHandler;
 use anyhow::{anyhow, Result};
 use clap::Parser;
 use colored::Colorize;
-use inquire::Text;
+use inquire::{Select, Text};
 
 #[derive(Parser)]
 #[command(
-    version = "0.0.1",
+    version = "0.1.0",
     about = "A command to dispatch a kubernetes job from a cronjob spec"
 )]
 pub struct Cli {
-    #[arg(short, long)]
-    job_name: String,
+    #[arg(
+        short,
+        long,
+        help = "The cronjob name that will be used as the source of the job"
+    )]
+    job_name: Option<String>,
 
-    #[arg(short, long)]
-    target_name: Option<String>,
+    #[arg(short, long, help = "The name of the job that will be create")]
+    target_name: String,
 
     #[arg(short, long, default_value = "false")]
     dry_run: bool,
@@ -30,7 +34,17 @@ pub struct Cli {
 impl Cli {
     pub async fn run<S: AsRef<str>>(&self, kube_handler: &mut KubeHandler<S>) -> Result<()> {
         // Get the targeted cronjob
-        let job_tmpl_spec = kube_handler.get_cronjob_spec(&self.job_name).await?;
+        let job_tmpl_spec = match &self.job_name {
+            Some(name) => kube_handler.get_cronjob_spec(name).await?,
+            None => {
+                let name = kube_handler
+                    .list_cronjob()
+                    .await
+                    .map(|list| self.prompt_user_list_selection(list))??;
+
+                kube_handler.get_cronjob_spec(name).await?
+            }
+        };
 
         // Get the environment variable from the job spec
         let Some(mut job_spec) = job_tmpl_spec.spec else {
@@ -45,13 +59,8 @@ impl Cli {
         // Rebuild the job spec with the updated environment variables
         job_spec.rebuild_env(envs)?;
 
-        let name = match &self.target_name {
-            Some(name) => name,
-            None => &self.job_name,
-        };
-
         kube_handler
-            .build_manual_job(name, job_spec, self.backoff_limit)?
+            .build_manual_job(&self.target_name, job_spec, self.backoff_limit)?
             .apply_manual_job(self.dry_run)
             .await?;
 
@@ -71,5 +80,16 @@ impl Cli {
                 }
             }
         }
+    }
+
+    fn prompt_user_list_selection(&self, list: Vec<String>) -> Result<String> {
+        let selected = Select::new(
+            "Select the cronjob that you want to use as a base of the job",
+            list,
+        )
+        .prompt()
+        .map_err(|_| anyhow!("An error occurred. Please try again"))?;
+
+        Ok(selected)
     }
 }

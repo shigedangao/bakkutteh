@@ -14,7 +14,13 @@ pub struct ContainerEnv {
 }
 
 pub trait SpecHandler {
+    /// Extract the environment variables of the container (secrets are avoid)
     fn get_env(&self) -> Result<Vec<ContainerEnv>>;
+    /// Rebuild the environment variable based on the one provided by the user
+    ///
+    /// # Arguments
+    ///
+    /// * `envs` - Vec<ContainerEnv>
     fn rebuild_env(&mut self, envs: Vec<ContainerEnv>) -> Result<()>;
 }
 
