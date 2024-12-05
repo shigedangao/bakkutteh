@@ -54,7 +54,7 @@ impl Cli {
         let mut envs = job_spec.get_env()?;
 
         // Show the user the environment variable and let the user confirm the value to output
-        self.prompt_user_env(&mut envs);
+        self.prompt_user_env(&mut envs)?;
 
         // Rebuild the job spec with the updated environment variables
         job_spec.rebuild_env(envs)?;
@@ -67,19 +67,22 @@ impl Cli {
         Ok(())
     }
 
-    fn prompt_user_env(&self, envs: &mut Vec<ContainerEnv>) {
+    fn prompt_user_env(&self, envs: &mut Vec<ContainerEnv>) -> Result<()> {
         for container in envs {
             for (name, kind) in &mut container.envs {
                 if let EnvKind::Literal(literal) = kind {
-                    if let Ok(res) = Text::new(&format!("Env for {}: ", name.bright_cyan()))
+                    match Text::new(&format!("Env for {}: ", name.bright_cyan()))
                         .with_default(literal)
                         .prompt()
                     {
-                        *kind = EnvKind::Literal(res);
+                        Ok(res) => *kind = EnvKind::Literal(res),
+                        Err(err) => return Err(anyhow!("Operation canceled: {:?}", err)),
                     }
                 }
             }
         }
+
+        Ok(())
     }
 
     fn prompt_user_list_selection(&self, list: Vec<String>) -> Result<String> {
