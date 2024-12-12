@@ -130,7 +130,7 @@ where
         match job_api.create(&pp, job).await {
             Ok(res) => match dry_run {
                 true => {
-                    let yaml = serde_yaml::to_string(&res)?;
+                    let yaml = serde_yml::to_string(&res)?;
                     println!(
                         "\nDry run result for job {}",
                         res.metadata.name.unwrap_or_default().bright_purple().bold()

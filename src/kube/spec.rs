@@ -1,7 +1,8 @@
 use anyhow::{anyhow, Result};
 use k8s_openapi::api::{batch::v1::JobSpec, core::v1::EnvVarSource};
-use std::{collections::HashMap, ops::Deref};
+use std::{collections::BTreeMap, ops::Deref};
 
+#[derive(Debug, PartialEq)]
 pub enum EnvKind {
     Literal(String),
     ConfigMap(Box<EnvVarSource>),
@@ -10,7 +11,7 @@ pub enum EnvKind {
 #[derive(Default)]
 pub struct ContainerEnv {
     pub name: String,
-    pub envs: HashMap<String, EnvKind>,
+    pub envs: BTreeMap<String, EnvKind>,
 }
 
 pub trait SpecHandler {
@@ -41,7 +42,7 @@ impl SpecHandler for JobSpec {
             };
 
             if let Some(env) = &container.env {
-                let envs: HashMap<String, EnvKind> = env
+                let envs: BTreeMap<String, EnvKind> = env
                     .iter()
                     .filter_map(|e| {
                         let name = e.name.to_owned();
@@ -110,5 +111,94 @@ impl SpecHandler for JobSpec {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SpecHandler;
+    use crate::kube::spec::EnvKind;
+    use k8s_openapi::api::{
+        batch::v1::JobSpec,
+        core::v1::{Container, EnvVar, PodSpec, PodTemplateSpec},
+    };
+
+    #[test]
+    fn expect_to_process_env() {
+        let job_spec = JobSpec {
+            template: PodTemplateSpec {
+                metadata: None,
+                spec: Some(PodSpec {
+                    containers: vec![Container {
+                        env: Some(vec![EnvVar {
+                            name: "key".to_string(),
+                            value: Some("value".to_string()),
+                            ..Default::default()
+                        }]),
+                        name: "main".to_string(),
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                }),
+            },
+            ..Default::default()
+        };
+
+        let fetched_env = job_spec.get_env();
+        assert!(fetched_env.is_ok());
+
+        let fetched_env = fetched_env.unwrap();
+        let container = fetched_env.first().unwrap();
+
+        assert_eq!(container.name, "main");
+        assert_eq!(
+            *container.envs.get("key").unwrap(),
+            EnvKind::Literal("value".to_string())
+        );
+    }
+
+    #[test]
+    fn expect_to_rebuild_env() {
+        let mut job_spec = JobSpec {
+            template: PodTemplateSpec {
+                metadata: None,
+                spec: Some(PodSpec {
+                    containers: vec![Container {
+                        env: Some(vec![EnvVar {
+                            name: "key".to_string(),
+                            value: Some("value".to_string()),
+                            ..Default::default()
+                        }]),
+                        name: "main".to_string(),
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                }),
+            },
+            ..Default::default()
+        };
+
+        let mut envs = job_spec.get_env().unwrap();
+        let container = envs.first_mut().expect("Expect to get the first container");
+
+        let env = container
+            .envs
+            .get_mut("key")
+            .expect("Expect to get mutable reference of the environment variable");
+
+        *env = EnvKind::Literal("dodo".to_string());
+
+        // Rebuild the environment variable and expect the job spec key = dodo
+        let res = job_spec.rebuild_env(envs);
+        assert!(res.is_ok());
+
+        let spec = job_spec
+            .template
+            .spec
+            .expect("Expect to get the spec of the pod");
+        let container = spec.containers.first().expect("Expect to get a container");
+        let new_env = container.env.as_ref().unwrap().first().unwrap();
+
+        assert_eq!(new_env.value.as_ref().unwrap(), "dodo");
     }
 }
