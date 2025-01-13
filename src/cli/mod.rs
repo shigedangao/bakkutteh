@@ -3,7 +3,9 @@ use crate::kube::KubeHandler;
 use anyhow::{anyhow, Result};
 use clap::Parser;
 use colored::Colorize;
-use inquire::{Select, Text};
+use inquire::{Confirm, Select, Text};
+
+const SPLIT_ENV_OPERATOR: &str = "=";
 
 #[derive(Parser)]
 #[command(
@@ -56,8 +58,12 @@ impl Cli {
         // Show the user the environment variable and let the user confirm the value to output
         self.prompt_user_env(&mut envs)?;
 
+        if self.ask_user_additional_env("Do you want to add additional env ?")? {
+            self.process_prompt_additional_env(&mut envs)?;
+        }
+
         // Rebuild the job spec with the updated environment variables
-        job_spec.rebuild_env(envs)?;
+        job_spec.rebuild_env(&mut envs)?;
 
         kube_handler
             .build_manual_job(&self.target_name, job_spec, self.backoff_limit)?
@@ -94,5 +100,55 @@ impl Cli {
         .map_err(|_| anyhow!("An error occurred. Please try again"))?;
 
         Ok(selected)
+    }
+
+    fn ask_user_additional_env(&self, msg: &str) -> Result<bool> {
+        let adds_env_prompt = Confirm::new(msg).with_default(false).prompt()?;
+
+        Ok(adds_env_prompt)
+    }
+
+    fn process_prompt_additional_env(&self, envs: &mut [ContainerEnv]) -> Result<()> {
+        let mut ask_user_additional_env = true;
+
+        // Select the container which will be used to add the additional environment variables
+        let containers_name = envs.iter().map(|c| c.name.clone()).collect::<Vec<_>>();
+        let answer = Select::new(
+            "Select the container to add the additional environment variable",
+            containers_name,
+        )
+        .prompt()?;
+
+        let tgt_container = envs
+            .iter_mut()
+            .filter(|c| c.name == answer)
+            .last()
+            .ok_or_else(|| anyhow!("Unable to found the targeted container"))?;
+
+        while ask_user_additional_env {
+            if let Ok(res) = Text::new("Input the additional env separate with a =").prompt() {
+                let properties = res.split(SPLIT_ENV_OPERATOR).collect::<Vec<_>>();
+                if properties.len() != 2 {
+                    return Err(anyhow!("Expect to have an environment variable formatted like specified: ENV_NAME=VALUE"));
+                }
+
+                let (key, value) = (
+                    properties.first().expect("Expect key to be defined"),
+                    properties.last().expect("Expect value to be defined"),
+                );
+
+                // Push env to the containers envs
+                tgt_container
+                    .envs
+                    .insert(key.to_string(), EnvKind::Literal(value.to_string()));
+
+                // Asking to the user whether it wants to add additional env
+                if !self.ask_user_additional_env("Do you still want to add additional env ?")? {
+                    ask_user_additional_env = false;
+                }
+            };
+        }
+
+        Ok(())
     }
 }

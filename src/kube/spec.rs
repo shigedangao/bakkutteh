@@ -1,14 +1,17 @@
 use anyhow::{anyhow, Result};
-use k8s_openapi::api::{batch::v1::JobSpec, core::v1::EnvVarSource};
+use k8s_openapi::api::{
+    batch::v1::JobSpec,
+    core::v1::{EnvVar, EnvVarSource},
+};
 use std::{collections::BTreeMap, ops::Deref};
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum EnvKind {
     Literal(String),
     ConfigMap(Box<EnvVarSource>),
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct ContainerEnv {
     pub name: String,
     pub envs: BTreeMap<String, EnvKind>,
@@ -22,7 +25,7 @@ pub trait SpecHandler {
     /// # Arguments
     ///
     /// * `envs` - Vec<ContainerEnv>
-    fn rebuild_env(&mut self, envs: Vec<ContainerEnv>) -> Result<()>;
+    fn rebuild_env(&mut self, envs: &mut Vec<ContainerEnv>) -> Result<()>;
 }
 
 impl SpecHandler for JobSpec {
@@ -67,7 +70,7 @@ impl SpecHandler for JobSpec {
         Ok(containers_env)
     }
 
-    fn rebuild_env(&mut self, envs: Vec<ContainerEnv>) -> Result<()> {
+    fn rebuild_env(&mut self, envs: &mut Vec<ContainerEnv>) -> Result<()> {
         // If no env is to be found then there's no need to rebuild the environment variable
         if envs.is_empty() {
             return Ok(());
@@ -82,7 +85,7 @@ impl SpecHandler for JobSpec {
         for (idx, container) in pod_spec.containers.iter_mut().enumerate() {
             let updated_env =
                 match envs
-                    .get(idx)
+                    .get_mut(idx)
                     .and_then(|cont| match cont.name == container.name {
                         true => Some(cont),
                         false => None,
@@ -97,13 +100,29 @@ impl SpecHandler for JobSpec {
                 };
 
             if let Some(container_envs) = container.env.as_mut() {
-                for container_env in container_envs {
+                for container_env in container_envs.iter_mut() {
                     if let Some(value) = updated_env.envs.get(&container_env.name) {
                         match value {
                             EnvKind::Literal(value) => container_env.value = Some(value.clone()),
                             EnvKind::ConfigMap(value) => {
                                 container_env.value_from = Some(value.deref().clone())
                             }
+                        }
+
+                        // Drain the key from the map
+                        updated_env.envs.remove(&container_env.name);
+                    }
+                }
+
+                // Add additional environment variables to the container if there are still some existing keys
+                if !updated_env.envs.is_empty() {
+                    for (key, value) in &updated_env.envs {
+                        if let EnvKind::Literal(value) = value {
+                            container_envs.push(EnvVar {
+                                name: key.to_owned(),
+                                value: Some(value.to_owned()),
+                                value_from: None,
+                            });
                         }
                     }
                 }
@@ -189,7 +208,7 @@ mod tests {
         *env = EnvKind::Literal("dodo".to_string());
 
         // Rebuild the environment variable and expect the job spec key = dodo
-        let res = job_spec.rebuild_env(envs);
+        let res = job_spec.rebuild_env(&mut envs);
         assert!(res.is_ok());
 
         let spec = job_spec
