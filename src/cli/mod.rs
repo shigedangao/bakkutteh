@@ -4,6 +4,8 @@ use anyhow::{anyhow, Result};
 use clap::Parser;
 use colored::Colorize;
 use inquire::{Confirm, Select, Text};
+use k8s_openapi::api::apps::v1::Deployment;
+use k8s_openapi::api::batch::v1::CronJob;
 
 const SPLIT_ENV_OPERATOR: &str = "=";
 
@@ -31,18 +33,30 @@ pub struct Cli {
 
     #[arg(short, long, default_value = "3")]
     pub backoff_limit: i32,
+
+    #[arg(
+        long,
+        default_value = "false",
+        help = "Enable the option to use a deployment spec to create a manual job"
+    )]
+    pub deployment: bool,
 }
 
 impl Cli {
     pub async fn run<S: AsRef<str>>(&self, kube_handler: &mut KubeHandler<S>) -> Result<()> {
-        // Get the targeted cronjob
+        // Sometimes we want to create a job from a deployment spec.
         let job_tmpl_spec = match &self.job_name {
-            Some(name) => kube_handler.get_cronjob_spec(name).await?,
+            Some(name) => match self.deployment {
+                true => kube_handler.get_deployment_spec(name).await?,
+                false => kube_handler.get_cronjob_spec(name).await?,
+            },
             None => {
-                let name = kube_handler
-                    .list_cronjob()
-                    .await
-                    .map(|list| self.prompt_user_list_selection(list))??;
+                let list = match self.deployment {
+                    true => kube_handler.list::<Deployment>().await?,
+                    false => kube_handler.list::<CronJob>().await?,
+                };
+
+                let name = self.prompt_user_list_selection(list)?;
 
                 kube_handler.get_cronjob_spec(name).await?
             }

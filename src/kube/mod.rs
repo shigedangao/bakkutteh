@@ -1,9 +1,18 @@
+use std::fmt::Debug;
+
 use anyhow::{anyhow, Result};
 use colored::{self, Colorize};
-use k8s_openapi::api::batch::v1::{CronJob, Job, JobSpec, JobTemplateSpec};
+use k8s_openapi::{
+    api::{
+        apps::v1::Deployment,
+        batch::v1::{CronJob, Job, JobSpec, JobTemplateSpec},
+    },
+    serde::de::DeserializeOwned,
+    NamespaceResourceScope,
+};
 use kube::{
     api::{Api, ListParams, PostParams},
-    Client,
+    Client, Resource,
 };
 use serde_json::json;
 
@@ -35,6 +44,42 @@ where
         })
     }
 
+    /// Get a deployment job template spec from a given name
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - N
+    pub async fn get_deployment_spec<N: AsRef<str>>(&self, name: N) -> Result<JobTemplateSpec> {
+        let deps_api: Api<Deployment> =
+            Api::namespaced(self.client.clone(), self.namespace.as_ref());
+        let dep = deps_api.get(name.as_ref()).await?;
+
+        let spec = dep
+            .spec
+            .map(|mut dep| {
+                // Update the spec restart policy
+                if let Some(spec) = dep.template.spec.as_mut() {
+                    spec.restart_policy = Some("Never".to_string());
+                }
+
+                JobTemplateSpec {
+                    metadata: dep.template.metadata.clone(),
+                    spec: Some(JobSpec {
+                        template: dep.template,
+                        ..Default::default()
+                    }),
+                }
+            })
+            .ok_or_else(|| {
+                anyhow!(
+                    "Unable to found the pod spec for the targeted deployment {:?}",
+                    name.as_ref()
+                )
+            })?;
+
+        Ok(spec)
+    }
+
     /// Get a cronjob spec for the targeted cronjob name
     ///
     /// # Arguments
@@ -64,9 +109,14 @@ where
         Ok(spec)
     }
 
-    /// List cronjob available in the selected namespace
-    pub async fn list_cronjob(&self) -> Result<Vec<String>> {
-        let cronjobs: Api<CronJob> = Api::namespaced(self.client.clone(), self.namespace.as_ref());
+    /// List the existing resources on the cluster
+    pub async fn list<K>(&self) -> Result<Vec<String>>
+    where
+        K: Resource<Scope = NamespaceResourceScope>,
+        K: Resource + Clone + Debug + DeserializeOwned,
+        <K as Resource>::DynamicType: Default,
+    {
+        let cronjobs: Api<K> = Api::namespaced(self.client.clone(), self.namespace.as_ref());
 
         let lp = ListParams::default();
         let list = cronjobs.list(&lp).await?;
@@ -74,7 +124,7 @@ where
         let cronjob_list = list
             .items
             .into_iter()
-            .filter_map(|item| item.metadata.name)
+            .filter_map(|item| item.meta().name.clone())
             .collect::<Vec<_>>();
 
         Ok(cronjob_list)
