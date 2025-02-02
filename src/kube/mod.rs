@@ -1,5 +1,3 @@
-use std::fmt::Debug;
-
 use anyhow::{anyhow, Result};
 use colored::{self, Colorize};
 use k8s_openapi::{
@@ -15,6 +13,7 @@ use kube::{
     Client, Resource,
 };
 use serde_json::json;
+use std::fmt::Debug;
 
 pub(crate) mod spec;
 
@@ -44,15 +43,31 @@ where
         })
     }
 
+    /// Get the object for the targeted api
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - N
+    async fn get_object<K, N>(&self, name: N) -> Result<K>
+    where
+        K: Resource<Scope = NamespaceResourceScope>,
+        K: Resource + Clone + Debug + DeserializeOwned,
+        <K as Resource>::DynamicType: Default,
+        N: AsRef<str>,
+    {
+        let api: Api<K> = Api::namespaced(self.client.clone(), self.namespace.as_ref());
+        let object = api.get(name.as_ref()).await?;
+
+        Ok(object)
+    }
+
     /// Get a deployment job template spec from a given name
     ///
     /// # Arguments
     ///
     /// * `name` - N
     pub async fn get_deployment_spec<N: AsRef<str>>(&self, name: N) -> Result<JobTemplateSpec> {
-        let deps_api: Api<Deployment> =
-            Api::namespaced(self.client.clone(), self.namespace.as_ref());
-        let dep = deps_api.get(name.as_ref()).await?;
+        let dep: Deployment = self.get_object(name.as_ref()).await?;
 
         let spec = dep
             .spec
@@ -92,8 +107,7 @@ where
             self.namespace.as_ref().truecolor(133, 59, 255).bold()
         );
 
-        let cronjobs: Api<CronJob> = Api::namespaced(self.client.clone(), self.namespace.as_ref());
-        let targeted_cronjob = cronjobs.get(name.as_ref()).await?;
+        let targeted_cronjob: CronJob = self.get_object(name.as_ref()).await?;
 
         // Get the spec of the cronjob
         let spec = targeted_cronjob
@@ -116,18 +130,18 @@ where
         K: Resource + Clone + Debug + DeserializeOwned,
         <K as Resource>::DynamicType: Default,
     {
-        let cronjobs: Api<K> = Api::namespaced(self.client.clone(), self.namespace.as_ref());
+        let target_object: Api<K> = Api::namespaced(self.client.clone(), self.namespace.as_ref());
 
         let lp = ListParams::default();
-        let list = cronjobs.list(&lp).await?;
+        let list = target_object.list(&lp).await?;
 
-        let cronjob_list = list
+        let list = list
             .items
             .into_iter()
             .filter_map(|item| item.meta().name.clone())
             .collect::<Vec<_>>();
 
-        Ok(cronjob_list)
+        Ok(list)
     }
 
     /// Build a manual job from the cronjob job spec

@@ -7,11 +7,12 @@ use inquire::{Confirm, Select, Text};
 use k8s_openapi::api::apps::v1::Deployment;
 use k8s_openapi::api::batch::v1::CronJob;
 
+// Constant
 const SPLIT_ENV_OPERATOR: &str = "=";
 
 #[derive(Parser)]
 #[command(
-    version = "0.1.0",
+    version = "0.1.5",
     about = "A command to dispatch a kubernetes job from a cronjob spec"
 )]
 pub struct Cli {
@@ -58,7 +59,10 @@ impl Cli {
 
                 let name = self.prompt_user_list_selection(list)?;
 
-                kube_handler.get_cronjob_spec(name).await?
+                match self.deployment {
+                    true => kube_handler.get_deployment_spec(name).await?,
+                    false => kube_handler.get_cronjob_spec(name).await?,
+                }
             }
         };
 
