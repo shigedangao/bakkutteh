@@ -45,25 +45,21 @@ pub struct Cli {
 
 impl Cli {
     pub async fn run<S: AsRef<str>>(&self, kube_handler: &mut KubeHandler<S>) -> Result<()> {
-        // Sometimes we want to create a job from a deployment spec.
-        let job_tmpl_spec = match &self.job_name {
-            Some(name) => match self.deployment {
-                true => kube_handler.get_deployment_spec(name).await?,
-                false => kube_handler.get_cronjob_spec(name).await?,
-            },
+        let name = match &self.job_name {
+            Some(name) => name.to_owned(),
             None => {
                 let list = match self.deployment {
                     true => kube_handler.list::<Deployment>().await?,
                     false => kube_handler.list::<CronJob>().await?,
                 };
 
-                let name = self.prompt_user_list_selection(list)?;
-
-                match self.deployment {
-                    true => kube_handler.get_deployment_spec(name).await?,
-                    false => kube_handler.get_cronjob_spec(name).await?,
-                }
+                self.prompt_user_list_selection(list)?
             }
+        };
+
+        let job_tmpl_spec = match self.deployment {
+            true => kube_handler.get_deployment_spec(name).await?,
+            false => kube_handler.get_cronjob_spec(name).await?,
         };
 
         // Get the environment variable from the job spec
