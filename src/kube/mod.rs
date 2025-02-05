@@ -17,11 +17,16 @@ use std::fmt::Debug;
 
 pub(crate) mod spec;
 
+// Constant
+const BATCH_UID_REMOVE: &str = "batch.kubernetes.io/controller-uid";
+const UID_REMOVE: &str = "controller-uid";
+
 #[derive(Clone)]
 pub struct KubeHandler<S: AsRef<str>> {
     client: Client,
     namespace: S,
     job: Option<Job>,
+    dry_run: bool,
 }
 
 impl<S> KubeHandler<S>
@@ -33,13 +38,14 @@ where
     /// # Arguments
     ///
     /// * `ns` - S
-    pub async fn new(ns: S) -> Result<Self> {
+    pub async fn new(ns: S, dry_run: bool) -> Result<Self> {
         let client = Client::try_default().await?;
 
         Ok(Self {
             client,
             namespace: ns,
             job: None,
+            dry_run,
         })
     }
 
@@ -175,15 +181,11 @@ where
     }
 
     /// Apply the manual job in K8S
-    ///
-    /// # Arguments
-    ///
-    /// * `dry_run` - bool
-    pub async fn apply_manual_job(&self, dry_run: bool) -> Result<()> {
+    pub async fn apply_manual_job(&self) -> Result<Job> {
         let job_api: Api<Job> = Api::namespaced(self.client.clone(), self.namespace.as_ref());
         let mut pp = PostParams::default();
 
-        if dry_run {
+        if self.dry_run {
             pp.dry_run = true;
         }
 
@@ -191,31 +193,61 @@ where
             return Err(anyhow!("Unable to create the job as building spec failed"));
         };
 
-        match job_api.create(&pp, job).await {
-            Ok(res) => match dry_run {
-                true => {
-                    let yaml = serde_yml::to_string(&res)?;
-                    println!(
-                        "\nDry run result for job {}",
-                        res.metadata.name.unwrap_or_default().bright_purple().bold()
-                    );
+        let job = job_api.create(&pp, job).await?;
 
-                    println!("\n{}", yaml)
-                }
-                false => println!(
-                    "Job {} created",
-                    res.metadata
-                        .name
-                        .unwrap_or_default()
-                        .truecolor(7, 174, 237)
-                        .bold()
-                ),
-            },
-            Err(err) => println!(
-                "Unable to create job due to error: {}",
-                err.to_string().red().bold()
-            ),
-        };
+        Ok(job)
+    }
+
+    /// Display the spec in the case if the user asked for a dry run
+    ///
+    /// # Arguments
+    ///
+    /// * `job` - Job
+    pub fn display_spec(&self, mut job: Job) -> Result<()> {
+        if !self.dry_run {
+            println!(
+                "Job {} created",
+                job.metadata
+                    .name
+                    .unwrap_or_default()
+                    .truecolor(7, 174, 237)
+                    .bold()
+            );
+
+            return Ok(());
+        }
+
+        // Remove presence of managed fields from the job
+        job.metadata.managed_fields = None;
+        // Remove presence of labels containing "controler-uid" in the metadata & template
+        if let Some(fields) = job.metadata.labels.as_mut() {
+            fields.remove(BATCH_UID_REMOVE);
+            fields.remove(UID_REMOVE);
+        }
+
+        if let Some(labels) = job
+            .spec
+            .as_mut()
+            .and_then(|spec| spec.template.metadata.as_mut())
+            .and_then(|tmpl| tmpl.labels.as_mut())
+        {
+            labels.remove(UID_REMOVE);
+            labels.remove(BATCH_UID_REMOVE);
+        }
+
+        job.spec
+            .as_mut()
+            .and_then(|spec| spec.selector.as_mut())
+            .and_then(|selector| selector.match_labels.as_mut())
+            .map(|selector| selector.remove(BATCH_UID_REMOVE));
+
+        let yaml = serde_yml::to_string(&job)?;
+        println!(
+            "\nDry run result for job {}",
+            job.metadata.name.unwrap_or_default().bright_purple().bold()
+        );
+
+        println!("\n{}", yaml);
 
         Ok(())
     }

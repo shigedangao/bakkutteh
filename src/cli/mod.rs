@@ -12,7 +12,7 @@ const SPLIT_ENV_OPERATOR: &str = "=";
 
 #[derive(Parser)]
 #[command(
-    version = "0.1.5",
+    version = "0.1.6",
     about = "A command to dispatch a kubernetes job from a cronjob spec"
 )]
 pub struct Cli {
@@ -27,7 +27,7 @@ pub struct Cli {
     target_name: String,
 
     #[arg(short, long, default_value = "false")]
-    dry_run: bool,
+    pub dry_run: bool,
 
     #[arg(short, long, default_value = "default")]
     pub namespace: String,
@@ -81,8 +81,9 @@ impl Cli {
 
         kube_handler
             .build_manual_job(&self.target_name, job_spec, self.backoff_limit)?
-            .apply_manual_job(self.dry_run)
-            .await?;
+            .apply_manual_job()
+            .await
+            .and_then(|job| kube_handler.display_spec(job))?;
 
         Ok(())
     }

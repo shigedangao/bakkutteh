@@ -31,6 +31,23 @@ Just run without the option `-j`. A prompt will appear showing the list of cronj
 bakkutteh -- -t dodo --dry-run
 ```
 
+### Create a Job from a Deployment
+
+You can also create a Job from an existing deployment. You just need to add the `--deployment` option. Example below
+
+```sh
+bakkutteh -- -t dodo --dry-run --deployment
+```
+
+### Add additionals environment variable
+
+The CLI also allows you to add additional environment variables. The prompt will ask you whether you wanna add additional environment variable.
+If you wish to do so please follow this format e.g below. Quote don't need to be added.
+
+```sh
+DATA_START_TIME=2025-02-05T00:00:00
+```
+
 ### Output example
 
 ```sh
