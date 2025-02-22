@@ -1,6 +1,6 @@
-use crate::kube::spec::{ContainerEnv, EnvKind, SpecHandler};
 use crate::kube::KubeHandler;
-use anyhow::{anyhow, Result};
+use crate::kube::spec::{ContainerEnv, EnvKind, SpecHandler};
+use anyhow::{Result, anyhow};
 use clap::Parser;
 use colored::Colorize;
 use inquire::{Confirm, Select, Text};
@@ -12,7 +12,7 @@ const SPLIT_ENV_OPERATOR: &str = "=";
 
 #[derive(Parser)]
 #[command(
-    version = "0.1.6",
+    version = "0.1.7",
     about = "A command to dispatch a kubernetes job from a cronjob spec"
 )]
 pub struct Cli {
@@ -58,8 +58,12 @@ impl Cli {
         };
 
         let job_tmpl_spec = match self.deployment {
-            true => kube_handler.get_deployment_spec(name).await?,
-            false => kube_handler.get_cronjob_spec(name).await?,
+            true => {
+                kube_handler
+                    .get_spec_for_object::<_, Deployment>(name)
+                    .await?
+            }
+            false => kube_handler.get_spec_for_object::<_, CronJob>(name).await?,
         };
 
         // Get the environment variable from the job spec
@@ -144,7 +148,9 @@ impl Cli {
             if let Ok(res) = Text::new("Input the additional env separate with a =").prompt() {
                 let properties = res.split(SPLIT_ENV_OPERATOR).collect::<Vec<_>>();
                 if properties.len() != 2 {
-                    return Err(anyhow!("Expect to have an environment variable formatted like specified: ENV_NAME=VALUE"));
+                    return Err(anyhow!(
+                        "Expect to have an environment variable formatted like specified: ENV_NAME=VALUE"
+                    ));
                 }
 
                 let (key, value) = (

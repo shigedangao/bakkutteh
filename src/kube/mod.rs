@@ -1,21 +1,20 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use colored::{self, Colorize};
 use k8s_openapi::{
-    api::{
-        apps::v1::Deployment,
-        batch::v1::{CronJob, Job, JobSpec, JobTemplateSpec},
-    },
-    serde::de::DeserializeOwned,
     NamespaceResourceScope,
+    api::batch::v1::{Job, JobSpec, JobTemplateSpec},
+    serde::de::DeserializeOwned,
 };
 use kube::{
-    api::{Api, ListParams, PostParams},
     Client, Resource,
+    api::{Api, ListParams, PostParams},
 };
 use serde_json::json;
 use std::fmt::Debug;
+use template::TemplateSpecOps;
 
 pub(crate) mod spec;
+pub(crate) mod template;
 
 // Constant
 const BATCH_UID_REMOVE: &str = "batch.kubernetes.io/controller-uid";
@@ -67,66 +66,22 @@ where
         Ok(object)
     }
 
-    /// Get a deployment job template spec from a given name
+    /// Get the spec for a targeted kubernetes object
     ///
     /// # Arguments
     ///
     /// * `name` - N
-    pub async fn get_deployment_spec<N: AsRef<str>>(&self, name: N) -> Result<JobTemplateSpec> {
-        let dep: Deployment = self.get_object(name.as_ref()).await?;
-
-        let spec = dep
-            .spec
-            .map(|mut dep| {
-                // Update the spec restart policy
-                if let Some(spec) = dep.template.spec.as_mut() {
-                    spec.restart_policy = Some("Never".to_string());
-                }
-
-                JobTemplateSpec {
-                    metadata: dep.template.metadata.clone(),
-                    spec: Some(JobSpec {
-                        template: dep.template,
-                        ..Default::default()
-                    }),
-                }
-            })
-            .ok_or_else(|| {
-                anyhow!(
-                    "Unable to found the pod spec for the targeted deployment {:?}",
-                    name.as_ref()
-                )
-            })?;
-
-        Ok(spec)
-    }
-
-    /// Get a cronjob spec for the targeted cronjob name
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - N
-    pub async fn get_cronjob_spec<N: AsRef<str>>(&self, name: N) -> Result<JobTemplateSpec> {
-        println!(
-            "Getting cronjob {} from namespace {}",
-            name.as_ref().truecolor(7, 174, 237).bold(),
-            self.namespace.as_ref().truecolor(133, 59, 255).bold()
-        );
-
-        let targeted_cronjob: CronJob = self.get_object(name.as_ref()).await?;
-
-        // Get the spec of the cronjob
-        let spec = targeted_cronjob
-            .spec
-            .map(|j| j.job_template)
-            .ok_or_else(|| {
-                anyhow!(
-                    "Unable to found the cronjob spec for the targeted pod name {:?}",
-                    name.as_ref()
-                )
-            })?;
-
-        Ok(spec)
+    pub async fn get_spec_for_object<N, K>(&self, name: N) -> Result<JobTemplateSpec>
+    where
+        N: AsRef<str>,
+        K: Resource<Scope = NamespaceResourceScope>,
+        K: Resource + Clone + Debug + DeserializeOwned + TemplateSpecOps,
+        <K as Resource>::DynamicType: Default,
+    {
+        let object: K = self.get_object(name.as_ref()).await?;
+        object
+            .get_template_spec()
+            .ok_or_else(|| anyhow!("Unable to get the template spec for {}", name.as_ref()))
     }
 
     /// List the existing resources on the cluster

@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use k8s_openapi::api::{
     batch::v1::JobSpec,
     core::v1::{EnvVar, EnvVarSource},
