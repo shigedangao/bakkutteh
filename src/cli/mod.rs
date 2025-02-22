@@ -76,12 +76,18 @@ impl Cli {
         // Show the user the environment variable and let the user confirm the value to output
         self.prompt_user_env(&mut envs)?;
 
-        if self.ask_user_additional_env("Do you want to add additional env ?")? {
+        if self.ask_user_prompt("Do you want to add additional env ?")? {
             self.process_prompt_additional_env(&mut envs)?;
         }
 
         // Rebuild the job spec with the updated environment variables
         job_spec.rebuild_env(&mut envs)?;
+
+        // Upgrade the resources limits if needed
+        if self.ask_user_prompt("Do you want to update the resources limits ?")? {
+            let user_asked_resources = self.process_resources_prompt(&envs)?;
+            job_spec.update_resources(user_asked_resources)?;
+        }
 
         kube_handler
             .build_manual_job(&self.target_name, job_spec, self.backoff_limit)?
@@ -121,12 +127,17 @@ impl Cli {
         Ok(selected)
     }
 
-    fn ask_user_additional_env(&self, msg: &str) -> Result<bool> {
-        let adds_env_prompt = Confirm::new(msg).with_default(false).prompt()?;
+    fn ask_user_prompt(&self, msg: &str) -> Result<bool> {
+        let res = Confirm::new(msg).with_default(false).prompt()?;
 
-        Ok(adds_env_prompt)
+        Ok(res)
     }
 
+    /// Add additional environment variables to the list of existing environment variables present in the envs slice
+    ///
+    /// # Arguments
+    ///
+    /// * `envs` - &mut [Containers]
     fn process_prompt_additional_env(&self, envs: &mut [ContainerEnv]) -> Result<()> {
         let mut ask_user_additional_env = true;
 
@@ -164,12 +175,29 @@ impl Cli {
                     .insert(key.to_string(), EnvKind::Literal(value.to_string()));
 
                 // Asking to the user whether it wants to add additional env
-                if !self.ask_user_additional_env("Do you still want to add additional env ?")? {
+                if !self.ask_user_prompt("Do you still want to add additional env ?")? {
                     ask_user_additional_env = false;
                 }
             };
         }
 
         Ok(())
+    }
+
+    /// Ask desired resources to the user for the targeted container. The envs is only used to get the name list of the containers
+    ///
+    /// * `envs` - &[ContainerEnv]
+    fn process_resources_prompt(&self, envs: &[ContainerEnv]) -> Result<(String, String, String)> {
+        let containers_name = envs.iter().map(|c| c.name.clone()).collect::<Vec<_>>();
+        let container = Select::new(
+            "Select the container to add the additional environment variable",
+            containers_name,
+        )
+        .prompt()?;
+
+        let memory = Text::new("Set the memory limits").prompt()?;
+        let cpu = Text::new("Set the cpu limits").prompt()?;
+
+        Ok((memory, cpu, container))
     }
 }

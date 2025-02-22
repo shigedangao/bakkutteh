@@ -1,7 +1,10 @@
 use anyhow::{Result, anyhow};
-use k8s_openapi::api::{
-    batch::v1::JobSpec,
-    core::v1::{EnvVar, EnvVarSource},
+use k8s_openapi::{
+    api::{
+        batch::v1::JobSpec,
+        core::v1::{EnvVar, EnvVarSource, ResourceRequirements},
+    },
+    apimachinery::pkg::api::resource::Quantity,
 };
 use std::{collections::BTreeMap, ops::Deref};
 
@@ -24,8 +27,14 @@ pub trait SpecHandler {
     ///
     /// # Arguments
     ///
-    /// * `envs` - Vec<ContainerEnv>
+    /// * `envs` - &mut Vec<ContainerEnv>
     fn rebuild_env(&mut self, envs: &mut Vec<ContainerEnv>) -> Result<()>;
+    /// Update the resources of the pod
+    ///
+    /// # Arguments
+    ///
+    /// * `resources` - (String, String)
+    fn update_resources(&mut self, resources: (String, String, String)) -> Result<()>;
 }
 
 impl SpecHandler for JobSpec {
@@ -131,16 +140,66 @@ impl SpecHandler for JobSpec {
 
         Ok(())
     }
+
+    fn update_resources(&mut self, resources: (String, String, String)) -> Result<()> {
+        let (memory, cpu, container_name) = resources;
+
+        let Some(tmpl) = self.template.spec.as_mut() else {
+            return Err(anyhow!("Unable to retrieve the spec for the job"));
+        };
+
+        let Some(container) = tmpl
+            .containers
+            .iter_mut()
+            .filter(|ct| ct.name == container_name)
+            .last()
+        else {
+            return Err(anyhow!("Unable to get the targeted container"));
+        };
+
+        match container.resources.as_mut() {
+            Some(pds) => {
+                let lim = pds.limits.as_mut().map_or(
+                    BTreeMap::from([
+                        ("cpu".to_string(), Quantity(cpu.clone())),
+                        ("memory".to_string(), Quantity(memory.clone())),
+                    ]),
+                    |lim| {
+                        lim.insert("cpu".to_string(), Quantity(cpu));
+                        lim.insert("memory".to_string(), Quantity(memory));
+
+                        lim.clone()
+                    },
+                );
+
+                pds.limits = Some(lim);
+            }
+            None => {
+                container.resources = Some(ResourceRequirements {
+                    limits: Some(BTreeMap::from([
+                        ("cpu".to_string(), Quantity(cpu)),
+                        ("memory".to_string(), Quantity(memory)),
+                    ])),
+                    requests: None,
+                    ..Default::default()
+                })
+            }
+        };
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use super::SpecHandler;
     use crate::kube::spec::EnvKind;
-    use k8s_openapi::api::{
+    use k8s_openapi::{api::{
         batch::v1::JobSpec,
-        core::v1::{Container, EnvVar, PodSpec, PodTemplateSpec},
-    };
+        core::v1::{Container, EnvVar, PodSpec, PodTemplateSpec, ResourceRequirements},
+    }, apimachinery::pkg::api::resource::Quantity};
 
     #[test]
     fn expect_to_process_env() {
@@ -219,5 +278,40 @@ mod tests {
         let new_env = container.env.as_ref().unwrap().first().unwrap();
 
         assert_eq!(new_env.value.as_ref().unwrap(), "dodo");
+    }
+
+    #[test]
+    fn expect_to_update_resources() {
+        let mut job_spec = JobSpec {
+            template: PodTemplateSpec {
+                metadata: None,
+                spec: Some(PodSpec {
+                    containers: vec![Container {
+                        name: "main".to_string(),
+                        resources: Some(ResourceRequirements {
+                            limits: Some(BTreeMap::from([
+                                ("cpu".to_string(), Quantity("0.1".to_string())),
+                                ("memory".to_string(), Quantity("0.5".to_string()))
+                            ])),
+                            ..Default::default()
+                        }),
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                }),
+            },
+            ..Default::default()
+        };
+
+        let res = job_spec.update_resources(("10Mb".to_string(), "0.01".to_string(), "main".to_string()));
+        assert!(res.is_ok());
+
+        let pod = job_spec.template.spec.unwrap();
+        let container = pod.containers.first().unwrap();
+        let resources = container.resources.as_ref().unwrap();
+        let limits = resources.limits.as_ref().unwrap();
+
+        assert_eq!(limits.get("memory").unwrap().clone(), Quantity("10Mb".to_string()));
+        assert_eq!(limits.get("cpu").unwrap().clone(), Quantity("0.01".to_string()));
     }
 }

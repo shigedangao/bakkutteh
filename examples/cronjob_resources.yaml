@@ -1,0 +1,28 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: example-cronjob-resources
+spec:
+  schedule: "0 * * * *"  # Runs every hour
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: example-container
+            image: busybox
+            command: ["sh", "-c", "echo 'Running CronJob' && sleep 10"]
+            env:
+              - name: MY_ENV_VAR
+                value: "This is an environment variable"
+              - name: ANOTHER_ENV_VAR
+                value: "Another variable value"
+            resources:
+              requests:
+                memory: "5Mi"
+                cpu: "5m"
+              limits:
+                memory: "10Mi"
+                cpu: "10m"
+          restartPolicy: Never
+      backoffLimit: 3  # Retries failed job up to 3 times
