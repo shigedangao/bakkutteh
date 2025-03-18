@@ -16,7 +16,7 @@ const DECIMAL_SI: [&str; 6] = ["Ki", "Mi", "Gi", "Ti", "Pi", "Ei"];
 
 #[derive(Parser)]
 #[command(
-    version = "0.1.7",
+    version = "0.1.8",
     about = "A command to dispatch a kubernetes job from a cronjob spec"
 )]
 pub struct Cli {
