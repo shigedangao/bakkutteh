@@ -196,10 +196,13 @@ mod tests {
 
     use super::SpecHandler;
     use crate::kube::spec::EnvKind;
-    use k8s_openapi::{api::{
-        batch::v1::JobSpec,
-        core::v1::{Container, EnvVar, PodSpec, PodTemplateSpec, ResourceRequirements},
-    }, apimachinery::pkg::api::resource::Quantity};
+    use k8s_openapi::{
+        api::{
+            batch::v1::JobSpec,
+            core::v1::{Container, EnvVar, PodSpec, PodTemplateSpec, ResourceRequirements},
+        },
+        apimachinery::pkg::api::resource::Quantity,
+    };
 
     #[test]
     fn expect_to_process_env() {
@@ -291,7 +294,7 @@ mod tests {
                         resources: Some(ResourceRequirements {
                             limits: Some(BTreeMap::from([
                                 ("cpu".to_string(), Quantity("0.1".to_string())),
-                                ("memory".to_string(), Quantity("0.5".to_string()))
+                                ("memory".to_string(), Quantity("0.5".to_string())),
                             ])),
                             ..Default::default()
                         }),
@@ -303,7 +306,8 @@ mod tests {
             ..Default::default()
         };
 
-        let res = job_spec.update_resources(("10Mb".to_string(), "0.01".to_string(), "main".to_string()));
+        let res =
+            job_spec.update_resources(("10Mb".to_string(), "0.01".to_string(), "main".to_string()));
         assert!(res.is_ok());
 
         let pod = job_spec.template.spec.unwrap();
@@ -311,7 +315,13 @@ mod tests {
         let resources = container.resources.as_ref().unwrap();
         let limits = resources.limits.as_ref().unwrap();
 
-        assert_eq!(limits.get("memory").unwrap().clone(), Quantity("10Mb".to_string()));
-        assert_eq!(limits.get("cpu").unwrap().clone(), Quantity("0.01".to_string()));
+        assert_eq!(
+            limits.get("memory").unwrap().clone(),
+            Quantity("10Mb".to_string())
+        );
+        assert_eq!(
+            limits.get("cpu").unwrap().clone(),
+            Quantity("0.01".to_string())
+        );
     }
 }

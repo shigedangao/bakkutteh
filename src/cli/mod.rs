@@ -3,12 +3,16 @@ use crate::kube::spec::{ContainerEnv, EnvKind, SpecHandler};
 use anyhow::{Result, anyhow};
 use clap::Parser;
 use colored::Colorize;
+use inquire::validator::Validation;
 use inquire::{Confirm, Select, Text};
 use k8s_openapi::api::apps::v1::Deployment;
 use k8s_openapi::api::batch::v1::CronJob;
 
 // Constant
 const SPLIT_ENV_OPERATOR: &str = "=";
+// See definition of the SI here
+// @link https://docs.rs/k8s-openapi/latest/k8s_openapi/apimachinery/pkg/api/resource/struct.Quantity.html
+const DECIMAL_SI: [&str; 6] = ["Ki", "Mi", "Gi", "Ti", "Pi", "Ei"];
 
 #[derive(Parser)]
 #[command(
@@ -156,17 +160,27 @@ impl Cli {
             .ok_or_else(|| anyhow!("Unable to found the targeted container"))?;
 
         while ask_user_additional_env {
-            if let Ok(res) = Text::new("Input the additional env separate with a =").prompt() {
-                let properties = res.split(SPLIT_ENV_OPERATOR).collect::<Vec<_>>();
-                if properties.len() != 2 {
-                    return Err(anyhow!(
-                        "Expect to have an environment variable formatted like specified: ENV_NAME=VALUE"
-                    ));
-                }
+            if let Ok(res) = Text::new("Input the additional env separate with a =")
+                .with_validator(|s: &str| {
+                    let v = s.split(SPLIT_ENV_OPERATOR).collect::<Vec<_>>();
+                    if v.len() != 2 {
+                        return Ok(Validation::Invalid(
+                            "Environment variable should respect the format: ENV_NAME=VALUE".into(),
+                        ));
+                    }
 
+                    Ok(Validation::Valid)
+                })
+                .prompt()
+            {
+                let properties = res.split(SPLIT_ENV_OPERATOR).collect::<Vec<_>>();
                 let (key, value) = (
-                    properties.first().expect("Expect key to be defined"),
-                    properties.last().expect("Expect value to be defined"),
+                    properties
+                        .first()
+                        .ok_or_else(|| anyhow!("Expect to retrieve the key of the env"))?,
+                    properties
+                        .last()
+                        .ok_or_else(|| anyhow!("Expect to retrieve the value of the env"))?,
                 );
 
                 // Push env to the containers envs
@@ -195,9 +209,27 @@ impl Cli {
         )
         .prompt()?;
 
-        let memory = Text::new("Set the memory limits").prompt()?;
-        let cpu = Text::new("Set the cpu limits").prompt()?;
+        // Memory
+        let memory = Text::new("Set the memory limits")
+            .with_validator(|s: &str| match s.parse::<f64>().is_ok() {
+                true => Ok(Validation::Valid),
+                false => Ok(Validation::Invalid(
+                    "Memory should contains only numbers".into(),
+                )),
+            })
+            .prompt()?;
+        let memory_format = Select::new("Select a memory format", DECIMAL_SI.to_vec()).prompt()?;
 
-        Ok((memory, cpu, container))
+        // Cpu
+        let cpu = Text::new("Set the cpu limits")
+            .with_validator(|s: &str| match s.parse::<f64>().is_ok() {
+                true => Ok(Validation::Valid),
+                false => Ok(Validation::Invalid(
+                    "CPU should contains only numbers".into(),
+                )),
+            })
+            .prompt()?;
+
+        Ok((format!("{memory}{memory_format}"), cpu, container))
     }
 }
