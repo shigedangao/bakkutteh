@@ -6,7 +6,7 @@ use colored::Colorize;
 use inquire::validator::Validation;
 use inquire::{Confirm, Select, Text};
 use k8s_openapi::api::apps::v1::Deployment;
-use k8s_openapi::api::batch::v1::CronJob;
+use k8s_openapi::api::batch::v1::{CronJob, Job};
 
 // Constant
 const SPLIT_ENV_OPERATOR: &str = "=";
@@ -16,7 +16,7 @@ const DECIMAL_SI: [&str; 6] = ["Ki", "Mi", "Gi", "Ti", "Pi", "Ei"];
 
 #[derive(Parser)]
 #[command(
-    version = "0.1.8",
+    version = "0.1.9",
     about = "A command to dispatch a kubernetes job from a cronjob spec"
 )]
 pub struct Cli {
@@ -49,6 +49,17 @@ pub struct Cli {
 
 impl Cli {
     pub async fn run<S: AsRef<str>>(&self, kube_handler: &mut KubeHandler<S>) -> Result<()> {
+        // Check if the targeted name already exist in the cluster
+        if kube_handler
+            .get_object::<Job, _>(format!("{}-manual", self.target_name))
+            .await
+            .is_ok()
+        {
+            return Err(anyhow!(
+                "Job with the same name already exist in the cluster"
+            ));
+        }
+
         let name = match &self.job_name {
             Some(name) => name.to_owned(),
             None => {

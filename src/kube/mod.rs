@@ -53,7 +53,7 @@ where
     /// # Arguments
     ///
     /// * `name` - N
-    async fn get_object<K, N>(&self, name: N) -> Result<K>
+    pub async fn get_object<K, N>(&self, name: N) -> Result<K>
     where
         K: Resource<Scope = NamespaceResourceScope>,
         K: Resource + Clone + Debug + DeserializeOwned,
