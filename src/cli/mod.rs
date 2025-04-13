@@ -13,6 +13,8 @@ const SPLIT_ENV_OPERATOR: &str = "=";
 // See definition of the SI here
 // @link https://docs.rs/k8s-openapi/latest/k8s_openapi/apimachinery/pkg/api/resource/struct.Quantity.html
 const DECIMAL_SI: [&str; 6] = ["Ki", "Mi", "Gi", "Ti", "Pi", "Ei"];
+// Used to replace environment variable which already has a quote or single quote
+const REPLACE_STR: [char; 2] = ['\"', '\''];
 
 #[derive(Parser)]
 #[command(
@@ -167,7 +169,7 @@ impl Cli {
         let tgt_container = envs
             .iter_mut()
             .filter(|c| c.name == answer)
-            .last()
+            .next_back()
             .ok_or_else(|| anyhow!("Unable to found the targeted container"))?;
 
         while ask_user_additional_env {
@@ -195,9 +197,10 @@ impl Cli {
                 );
 
                 // Push env to the containers envs
-                tgt_container
-                    .envs
-                    .insert(key.to_string(), EnvKind::Literal(value.to_string()));
+                tgt_container.envs.insert(
+                    key.to_string(),
+                    EnvKind::Literal(value.to_string().replace(REPLACE_STR, "")),
+                );
 
                 // Asking to the user whether it wants to add additional env
                 if !self.ask_user_prompt("Do you still want to add additional env ?")? {

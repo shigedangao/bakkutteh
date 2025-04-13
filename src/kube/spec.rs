@@ -152,7 +152,7 @@ impl SpecHandler for JobSpec {
             .containers
             .iter_mut()
             .filter(|ct| ct.name == container_name)
-            .last()
+            .next_back()
         else {
             return Err(anyhow!("Unable to get the targeted container"));
         };
