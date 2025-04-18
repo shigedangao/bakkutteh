@@ -7,7 +7,7 @@ use k8s_openapi::{
 };
 use kube::{
     Client, Resource,
-    api::{Api, ListParams, PostParams},
+    api::{Api, DeleteParams, ListParams, PostParams},
 };
 use serde_json::json;
 use std::fmt::Debug;
@@ -64,6 +64,26 @@ where
         let object = api.get(name.as_ref()).await?;
 
         Ok(object)
+    }
+
+    /// Delete object
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - N
+    pub async fn delete_object<N>(&self, name: N) -> Result<()>
+    where
+        N: AsRef<str>,
+    {
+        let api: Api<Job> = Api::namespaced(self.client.clone(), self.namespace.as_ref());
+        let delete_params = DeleteParams::default();
+
+        api.delete(name.as_ref(), &delete_params)
+            .await
+            .map_err(|err| anyhow!("Unable to delete the job due to {:?}", err))?
+            .map_right(|s| println!("Job deleted with status {:?}", s));
+
+        Ok(())
     }
 
     /// Get the spec for a targeted kubernetes object
