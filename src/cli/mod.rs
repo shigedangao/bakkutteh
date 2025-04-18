@@ -52,14 +52,22 @@ pub struct Cli {
 impl Cli {
     pub async fn run<S: AsRef<str>>(&self, kube_handler: &mut KubeHandler<S>) -> Result<()> {
         // Check if the targeted name already exist in the cluster
+        let target_job_name = format!("{}-manual", self.target_name);
         if kube_handler
-            .get_object::<Job, _>(format!("{}-manual", self.target_name))
+            .get_object::<Job, _>(&target_job_name)
             .await
             .is_ok()
         {
-            return Err(anyhow!(
-                "Job with the same name already exist in the cluster"
-            ));
+            match self.ask_user_prompt(
+                "An job with the same name already exist. Do you want to delete this job",
+            )? {
+                true => kube_handler.delete_object(&target_job_name).await?,
+                false => {
+                    return Err(anyhow!(
+                        "Job with the same name already exist in the cluster"
+                    ));
+                }
+            }
         }
 
         let name = match &self.job_name {
