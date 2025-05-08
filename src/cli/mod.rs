@@ -1,5 +1,5 @@
 use crate::kube::KubeHandler;
-use crate::kube::spec::{ContainerEnv, EnvKind, SpecHandler};
+use crate::kube::spec::{ContainerEnv, EnvKind, SpecHandler, SpecResources};
 use anyhow::{Result, anyhow};
 use clap::Parser;
 use colored::Colorize;
@@ -7,6 +7,7 @@ use inquire::validator::Validation;
 use inquire::{Confirm, Select, Text};
 use k8s_openapi::api::apps::v1::Deployment;
 use k8s_openapi::api::batch::v1::{CronJob, Job};
+use k8s_openapi::apimachinery::pkg::api::resource::Quantity;
 
 // Constant
 const SPLIT_ENV_OPERATOR: &str = "=";
@@ -223,7 +224,7 @@ impl Cli {
     /// Ask desired resources to the user for the targeted container. The envs is only used to get the name list of the containers
     ///
     /// * `envs` - &[ContainerEnv]
-    fn process_resources_prompt(&self, envs: &[ContainerEnv]) -> Result<(String, String, String)> {
+    fn process_resources_prompt(&self, envs: &[ContainerEnv]) -> Result<(SpecResources, String)> {
         let containers_name = envs.iter().map(|c| c.name.clone()).collect::<Vec<_>>();
         let container = Select::new(
             "Select the container to add the additional environment variable",
@@ -252,6 +253,12 @@ impl Cli {
             })
             .prompt()?;
 
-        Ok((format!("{memory}{memory_format}"), cpu, container))
+        Ok((
+            SpecResources {
+                memory: Quantity(format!("{memory}{memory_format}")),
+                cpu: Quantity(cpu),
+            },
+            container,
+        ))
     }
 }

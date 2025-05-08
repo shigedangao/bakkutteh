@@ -20,6 +20,12 @@ pub struct ContainerEnv {
     pub envs: BTreeMap<String, EnvKind>,
 }
 
+#[derive(Default, Debug, Clone)]
+pub struct SpecResources {
+    pub cpu: Quantity,
+    pub memory: Quantity,
+}
+
 pub trait SpecHandler {
     /// Extract the environment variables of the container (secrets are avoid)
     fn get_env(&self) -> Result<Vec<ContainerEnv>>;
@@ -33,8 +39,8 @@ pub trait SpecHandler {
     ///
     /// # Arguments
     ///
-    /// * `resources` - (String, String)
-    fn update_resources(&mut self, resources: (String, String, String)) -> Result<()>;
+    /// * `resources` - (SpecResources, String)
+    fn update_resources(&mut self, resources: (SpecResources, String)) -> Result<()>;
 }
 
 impl SpecHandler for JobSpec {
@@ -141,8 +147,8 @@ impl SpecHandler for JobSpec {
         Ok(())
     }
 
-    fn update_resources(&mut self, resources: (String, String, String)) -> Result<()> {
-        let (memory, cpu, container_name) = resources;
+    fn update_resources(&mut self, resources: (SpecResources, String)) -> Result<()> {
+        let (updated_resources, container_name) = resources;
 
         let Some(tmpl) = self.template.spec.as_mut() else {
             return Err(anyhow!("Unable to retrieve the spec for the job"));
@@ -161,12 +167,12 @@ impl SpecHandler for JobSpec {
             Some(pds) => {
                 let lim = pds.limits.as_mut().map_or(
                     BTreeMap::from([
-                        ("cpu".to_string(), Quantity(cpu.clone())),
-                        ("memory".to_string(), Quantity(memory.clone())),
+                        ("cpu".to_string(), updated_resources.cpu.clone()),
+                        ("memory".to_string(), updated_resources.memory.clone()),
                     ]),
                     |lim| {
-                        lim.insert("cpu".to_string(), Quantity(cpu));
-                        lim.insert("memory".to_string(), Quantity(memory));
+                        lim.insert("cpu".to_string(), updated_resources.cpu);
+                        lim.insert("memory".to_string(), updated_resources.memory);
 
                         lim.clone()
                     },
@@ -176,10 +182,7 @@ impl SpecHandler for JobSpec {
             }
             None => {
                 container.resources = Some(ResourceRequirements {
-                    limits: Some(BTreeMap::from([
-                        ("cpu".to_string(), Quantity(cpu)),
-                        ("memory".to_string(), Quantity(memory)),
-                    ])),
+                    limits: None,
                     requests: None,
                     ..Default::default()
                 })
@@ -195,7 +198,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     use super::SpecHandler;
-    use crate::kube::spec::EnvKind;
+    use crate::kube::spec::{EnvKind, SpecResources};
     use k8s_openapi::{
         api::{
             batch::v1::JobSpec,
@@ -306,8 +309,13 @@ mod tests {
             ..Default::default()
         };
 
-        let res =
-            job_spec.update_resources(("10Mb".to_string(), "0.01".to_string(), "main".to_string()));
+        let res = job_spec.update_resources((
+            SpecResources {
+                memory: Quantity("10Mb".to_string()),
+                cpu: Quantity("0.01".to_string()),
+            },
+            "main".to_string(),
+        ));
         assert!(res.is_ok());
 
         let pod = job_spec.template.spec.unwrap();
