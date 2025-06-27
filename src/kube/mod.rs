@@ -81,7 +81,7 @@ where
         api.delete(name.as_ref(), &delete_params)
             .await
             .map_err(|err| anyhow!("Unable to delete the job due to {:?}", err))?
-            .map_right(|s| println!("Job deleted with status {:?}", s));
+            .map_right(|s| println!("Job deleted with status {s:?}"));
 
         Ok(())
     }
@@ -222,7 +222,7 @@ where
             job.metadata.name.unwrap_or_default().bright_purple().bold()
         );
 
-        println!("\n{}", yaml);
+        println!("\n{yaml}");
 
         Ok(())
     }
