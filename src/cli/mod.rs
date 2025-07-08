@@ -8,6 +8,8 @@ use inquire::{Confirm, Select, Text};
 use k8s_openapi::api::apps::v1::Deployment;
 use k8s_openapi::api::batch::v1::{CronJob, Job};
 use k8s_openapi::apimachinery::pkg::api::resource::Quantity;
+use std::fs;
+use std::path::PathBuf;
 
 // Constant
 const SPLIT_ENV_OPERATOR: &str = "=";
@@ -19,7 +21,7 @@ const REPLACE_STR: [char; 2] = ['\"', '\''];
 
 #[derive(Parser)]
 #[command(
-    version = "0.1.9",
+    version = "0.2.3",
     about = "A command to dispatch a kubernetes job from a cronjob spec"
 )]
 pub struct Cli {
@@ -48,6 +50,12 @@ pub struct Cli {
         help = "Enable the option to use a deployment spec to create a manual job"
     )]
     pub deployment: bool,
+
+    #[arg(
+        long,
+        help = "Output path of the spec when the user specified to use the --dry-run option"
+    )]
+    pub dry_run_output_path: Option<String>,
 }
 
 impl Cli {
@@ -115,11 +123,15 @@ impl Cli {
             job_spec.update_resources(user_asked_resources)?;
         }
 
-        kube_handler
+        let output = kube_handler
             .build_manual_job(&self.target_name, job_spec, self.backoff_limit)?
             .apply_manual_job()
             .await
             .and_then(|job| kube_handler.display_spec(job))?;
+
+        if let (Some(output_path), Some(contents)) = (&self.dry_run_output_path, output) {
+            fs::write(PathBuf::from(output_path), contents)?;
+        }
 
         Ok(())
     }

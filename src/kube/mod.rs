@@ -26,6 +26,7 @@ pub struct KubeHandler<S: AsRef<str>> {
     namespace: S,
     job: Option<Job>,
     dry_run: bool,
+    dry_run_output_path: bool,
 }
 
 impl<S> KubeHandler<S>
@@ -37,7 +38,7 @@ where
     /// # Arguments
     ///
     /// * `ns` - S
-    pub async fn new(ns: S, dry_run: bool) -> Result<Self> {
+    pub async fn new(ns: S, dry_run: bool, dry_run_output_path: bool) -> Result<Self> {
         let client = Client::try_default().await?;
 
         Ok(Self {
@@ -45,6 +46,7 @@ where
             namespace: ns,
             job: None,
             dry_run,
+            dry_run_output_path,
         })
     }
 
@@ -178,7 +180,7 @@ where
     /// # Arguments
     ///
     /// * `job` - Job
-    pub fn display_spec(&self, mut job: Job) -> Result<()> {
+    pub fn display_spec(&self, mut job: Job) -> Result<Option<String>> {
         if !self.dry_run {
             println!(
                 "Job {} created",
@@ -189,7 +191,7 @@ where
                     .bold()
             );
 
-            return Ok(());
+            return Ok(None);
         }
 
         // Remove presence of managed fields from the job
@@ -217,13 +219,16 @@ where
             .map(|selector| selector.remove(BATCH_UID_REMOVE));
 
         let yaml = serde_yml::to_string(&job)?;
-        println!(
-            "\nDry run result for job {}",
-            job.metadata.name.unwrap_or_default().bright_purple().bold()
-        );
 
-        println!("\n{yaml}");
+        if !self.dry_run_output_path {
+            println!(
+                "\nDry run result for job {}",
+                job.metadata.name.unwrap_or_default().bright_purple().bold()
+            );
 
-        Ok(())
+            println!("\n{yaml}");
+        }
+
+        Ok(Some(yaml))
     }
 }
