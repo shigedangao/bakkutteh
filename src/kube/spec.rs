@@ -24,6 +24,7 @@ pub struct ContainerEnv {
 pub struct SpecResources {
     pub cpu: Quantity,
     pub memory: Quantity,
+    pub container_name: String,
 }
 
 pub trait SpecHandler {
@@ -40,7 +41,7 @@ pub trait SpecHandler {
     /// # Arguments
     ///
     /// * `resources` - (SpecResources, String)
-    fn update_resources(&mut self, resources: (SpecResources, String)) -> Result<()>;
+    fn update_resources(&mut self, resources: SpecResources) -> Result<()>;
 }
 
 impl SpecHandler for JobSpec {
@@ -147,9 +148,7 @@ impl SpecHandler for JobSpec {
         Ok(())
     }
 
-    fn update_resources(&mut self, resources: (SpecResources, String)) -> Result<()> {
-        let (updated_resources, container_name) = resources;
-
+    fn update_resources(&mut self, resources: SpecResources) -> Result<()> {
         let Some(tmpl) = self.template.spec.as_mut() else {
             return Err(anyhow!("Unable to retrieve the spec for the job"));
         };
@@ -157,7 +156,7 @@ impl SpecHandler for JobSpec {
         let Some(container) = tmpl
             .containers
             .iter_mut()
-            .filter(|ct| ct.name == container_name)
+            .filter(|ct| ct.name == resources.container_name)
             .next_back()
         else {
             return Err(anyhow!("Unable to get the targeted container"));
@@ -167,12 +166,12 @@ impl SpecHandler for JobSpec {
             Some(pds) => {
                 let lim = pds.limits.as_mut().map_or(
                     BTreeMap::from([
-                        ("cpu".to_string(), updated_resources.cpu.clone()),
-                        ("memory".to_string(), updated_resources.memory.clone()),
+                        ("cpu".to_string(), resources.cpu.clone()),
+                        ("memory".to_string(), resources.memory.clone()),
                     ]),
                     |lim| {
-                        lim.insert("cpu".to_string(), updated_resources.cpu);
-                        lim.insert("memory".to_string(), updated_resources.memory);
+                        lim.insert("cpu".to_string(), resources.cpu);
+                        lim.insert("memory".to_string(), resources.memory);
 
                         lim.clone()
                     },
@@ -309,13 +308,11 @@ mod tests {
             ..Default::default()
         };
 
-        let res = job_spec.update_resources((
-            SpecResources {
-                memory: Quantity("10Mb".to_string()),
-                cpu: Quantity("0.01".to_string()),
-            },
-            "main".to_string(),
-        ));
+        let res = job_spec.update_resources(SpecResources {
+            memory: Quantity("10Mb".to_string()),
+            cpu: Quantity("0.01".to_string()),
+            container_name: "main".to_string(),
+        });
         assert!(res.is_ok());
 
         let pod = job_spec.template.spec.unwrap();

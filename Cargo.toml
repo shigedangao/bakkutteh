@@ -1,15 +1,16 @@
 [package]
 name = "bakkutteh"
-version = "0.2.3"
+version = "0.2.4"
 edition = "2024"
 
 [dependencies]
 clap = { version = "4.5.40", features = ["derive"] }
-kube = { version = "1.1.0", features = ["runtime", "derive"] }
-k8s-openapi = { version = "0.25.0", features = ["latest"] }
-tokio = { version = "1.46.1", features = ["full"] }
-anyhow = "1.0.98"
-serde_json = "1.0.140"
-inquire = "0.7.5"
+kube = { version = "2.0.1", features = ["runtime", "derive"] }
+k8s-openapi = { version = "0.26.0", features = ["latest", "schemars"] }
+schemars = { version = "1" }
+tokio = { version = "1.47.1", features = ["full"] }
+anyhow = "1.0.100"
+serde_json = "1.0.145"
+inquire = "0.9.1"
 colored = "3"
 serde_yml = "0.0.12"

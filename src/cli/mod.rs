@@ -136,6 +136,7 @@ impl Cli {
         Ok(())
     }
 
+    // Prompt the user to add additional environment variables to the containers
     fn prompt_user_env(&self, envs: &mut Vec<ContainerEnv>) -> Result<()> {
         for container in envs {
             for (name, kind) in &mut container.envs {
@@ -154,6 +155,7 @@ impl Cli {
         Ok(())
     }
 
+    // Prompt the user to select an item from a list of items
     fn prompt_user_list_selection(&self, list: Vec<String>) -> Result<String> {
         let selected = Select::new(
             "Select the cronjob that you want to use as a base of the job",
@@ -236,7 +238,7 @@ impl Cli {
     /// Ask desired resources to the user for the targeted container. The envs is only used to get the name list of the containers
     ///
     /// * `envs` - &[ContainerEnv]
-    fn process_resources_prompt(&self, envs: &[ContainerEnv]) -> Result<(SpecResources, String)> {
+    fn process_resources_prompt(&self, envs: &[ContainerEnv]) -> Result<SpecResources> {
         let containers_name = envs.iter().map(|c| c.name.clone()).collect::<Vec<_>>();
         let container = Select::new(
             "Select the container to add the additional environment variable",
@@ -265,12 +267,10 @@ impl Cli {
             })
             .prompt()?;
 
-        Ok((
-            SpecResources {
-                memory: Quantity(format!("{memory}{memory_format}")),
-                cpu: Quantity(cpu),
-            },
-            container,
-        ))
+        Ok(SpecResources {
+            memory: Quantity(format!("{memory}{memory_format}")),
+            cpu: Quantity(cpu),
+            container_name: container,
+        })
     }
 }
