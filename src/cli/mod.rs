@@ -33,7 +33,7 @@ pub struct Cli {
     job_name: Option<String>,
 
     #[arg(short, long, help = "The name of the job that will be create")]
-    target_name: String,
+    target_name: Option<String>,
 
     #[arg(short, long, default_value = "false")]
     pub dry_run: bool,
@@ -60,8 +60,27 @@ pub struct Cli {
 
 impl Cli {
     pub async fn run<S: AsRef<str>>(&self, kube_handler: &mut KubeHandler<S>) -> Result<()> {
+        let name = match &self.job_name {
+            Some(name) => name.to_owned(),
+            None => {
+                let list = match self.deployment {
+                    true => kube_handler.list::<Deployment>().await?,
+                    false => kube_handler.list::<CronJob>().await?,
+                };
+
+                self.prompt_user_list_selection(list)?
+            }
+        };
+
         // Check if the targeted name already exist in the cluster
-        let target_job_name = format!("{}-manual", self.target_name);
+        let target_job_name = match &self.target_name {
+            Some(name) => format!("{}-manual", name),
+            None => {
+                println!("Will use the name of the target job to create the job");
+                format!("{}-manual", name)
+            }
+        };
+
         if kube_handler
             .get_object::<Job, _>(&target_job_name)
             .await
@@ -78,18 +97,6 @@ impl Cli {
                 }
             }
         }
-
-        let name = match &self.job_name {
-            Some(name) => name.to_owned(),
-            None => {
-                let list = match self.deployment {
-                    true => kube_handler.list::<Deployment>().await?,
-                    false => kube_handler.list::<CronJob>().await?,
-                };
-
-                self.prompt_user_list_selection(list)?
-            }
-        };
 
         let job_tmpl_spec = match self.deployment {
             true => {
@@ -124,7 +131,7 @@ impl Cli {
         }
 
         let output = kube_handler
-            .build_manual_job(&self.target_name, job_spec, self.backoff_limit)?
+            .build_manual_job(&target_job_name, job_spec, self.backoff_limit)?
             .apply_manual_job()
             .await
             .and_then(|job| kube_handler.display_spec(job))?;
