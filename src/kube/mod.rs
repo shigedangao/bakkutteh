@@ -144,7 +144,7 @@ where
             "apiVersion": "batch/v1",
             "kind": "Job",
             "metadata": {
-                "name": format!("{}-manual", name.as_ref())
+                "name": name.as_ref()
             },
             "spec": {}
         }))?;
