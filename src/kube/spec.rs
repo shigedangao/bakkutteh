@@ -156,8 +156,7 @@ impl SpecHandler for JobSpec {
         let Some(container) = tmpl
             .containers
             .iter_mut()
-            .filter(|ct| ct.name == resources.container_name)
-            .next_back()
+            .rfind(|ct| ct.name == resources.container_name)
         else {
             return Err(anyhow!("Unable to get the targeted container"));
         };

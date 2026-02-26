@@ -16,6 +16,8 @@ const SPLIT_ENV_OPERATOR: &str = "=";
 // See definition of the SI here
 // @link https://docs.rs/k8s-openapi/latest/k8s_openapi/apimachinery/pkg/api/resource/struct.Quantity.html
 const DECIMAL_SI: [&str; 6] = ["Ki", "Mi", "Gi", "Ti", "Pi", "Ei"];
+// CPU definition is either None (no format) or m (millis)
+const CPU: [&str; 2] = ["None", "m"];
 // Used to replace environment variable which already has a quote or single quote
 const REPLACE_STR: [char; 2] = ['\"', '\''];
 
@@ -198,8 +200,7 @@ impl Cli {
 
         let tgt_container = envs
             .iter_mut()
-            .filter(|c| c.name == answer)
-            .next_back()
+            .rfind(|c| c.name == answer)
             .ok_or_else(|| anyhow!("Unable to found the targeted container"))?;
 
         while ask_user_additional_env {
@@ -266,17 +267,31 @@ impl Cli {
 
         // Cpu
         let cpu = Text::new("Set the cpu limits")
-            .with_validator(|s: &str| match s.parse::<f64>().is_ok() {
-                true => Ok(Validation::Valid),
-                false => Ok(Validation::Invalid(
-                    "CPU should contains only numbers".into(),
+            .with_validator(|s: &str| match s.parse::<f64>() {
+                Ok(v) => {
+                    if v < 0.001 {
+                        return Ok(Validation::Invalid(
+                            "CPU should be greater than or equal to 0.001".into(),
+                        ));
+                    }
+
+                    Ok(Validation::Valid)
+                }
+                Err(_) => Ok(Validation::Invalid(
+                    "CPU should contains numbers only".into(),
                 )),
             })
             .prompt()?;
+        let cpu_format = Select::new("Select a cpu format", CPU.to_vec())
+            .prompt()
+            .map(|format| match format {
+                "None" => "",
+                _ => format,
+            })?;
 
         Ok(SpecResources {
             memory: Quantity(format!("{memory}{memory_format}")),
-            cpu: Quantity(cpu),
+            cpu: Quantity(format!("{cpu}{cpu_format}")),
             container_name: container,
         })
     }
