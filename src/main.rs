@@ -1,4 +1,5 @@
 use clap::Parser;
+use cli::ui;
 use colored::{self, Colorize};
 
 mod cli;
@@ -6,6 +7,9 @@ mod kube;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Set the theme of the CLI for inquire interactions.
+    ui::init_clack_purple_theme();
+
     let cli = cli::Cli::parse();
 
     // Initialize the kube handler
@@ -20,7 +24,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Err(err) = cli.run(&mut kube_handler).await {
         println!(
             "Unable to create job due to error: {}",
-            err.to_string().red()
+            err.to_string().bright_red().bold()
         );
     };
 
