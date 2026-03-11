@@ -1,6 +1,6 @@
 [package]
 name = "bakkutteh"
-version = "0.2.6"
+version = "0.2.7"
 edition = "2024"
 
 [dependencies]
@@ -14,3 +14,4 @@ serde_json = "1.0.149"
 inquire = "0.9.4"
 colored = "3"
 serde_yml = "0.0.12"
+spinners = "4.2.0"

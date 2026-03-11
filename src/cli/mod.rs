@@ -1,15 +1,17 @@
+use crate::cli::ui::SpinnerWrapper;
 use crate::kube::KubeHandler;
 use crate::kube::spec::{ContainerEnv, EnvKind, SpecHandler, SpecResources};
 use anyhow::{Result, anyhow};
 use clap::Parser;
 use colored::Colorize;
 use inquire::validator::Validation;
-use inquire::{Confirm, Select, Text};
 use k8s_openapi::api::apps::v1::Deployment;
 use k8s_openapi::api::batch::v1::{CronJob, Job};
 use k8s_openapi::apimachinery::pkg::api::resource::Quantity;
 use std::fs;
 use std::path::PathBuf;
+
+pub mod ui;
 
 // Constant
 const SPLIT_ENV_OPERATOR: &str = "=";
@@ -20,6 +22,8 @@ const DECIMAL_SI: [&str; 6] = ["Ki", "Mi", "Gi", "Ti", "Pi", "Ei"];
 const CPU: [&str; 2] = ["None", "m"];
 // Used to replace environment variable which already has a quote or single quote
 const REPLACE_STR: [char; 2] = ['\"', '\''];
+// Color code for the Clack purple theme on colorized side.
+pub(crate) const COLOR: (u8, u8, u8) = (180, 140, 247);
 
 #[derive(Parser)]
 #[command(
@@ -65,12 +69,21 @@ impl Cli {
         let name = match &self.job_name {
             Some(name) => name.to_owned(),
             None => {
+                // Show a spinner while getting the list of jobs
+                let mut spinner = SpinnerWrapper::new("Getting list of jobs...");
+
                 let list = match self.deployment {
                     true => kube_handler.list::<Deployment>().await?,
                     false => kube_handler.list::<CronJob>().await?,
                 };
 
-                self.prompt_user_list_selection(list)?
+                // Stop the spinner after getting the list
+                spinner.stop();
+
+                ui::select(
+                    "Select the cronjob that you want to use as a base of the job".to_string(),
+                    list,
+                )?
             }
         };
 
@@ -88,8 +101,9 @@ impl Cli {
             .await
             .is_ok()
         {
-            match self.ask_user_prompt(
+            match ui::confirm(
                 "An job with the same name already exist. Do you want to delete this job",
+                false,
             )? {
                 true => kube_handler.delete_object(&target_job_name).await?,
                 false => {
@@ -100,6 +114,9 @@ impl Cli {
             }
         }
 
+        // Get the job details and stop the spinner if it exists
+        let mut object_spinner = SpinnerWrapper::new("Getting object details...");
+
         let job_tmpl_spec = match self.deployment {
             true => {
                 kube_handler
@@ -108,6 +125,9 @@ impl Cli {
             }
             false => kube_handler.get_spec_for_object::<_, CronJob>(name).await?,
         };
+
+        // Stop the spinner after getting the job details
+        object_spinner.stop();
 
         // Get the environment variable from the job spec
         let Some(mut job_spec) = job_tmpl_spec.spec else {
@@ -119,7 +139,7 @@ impl Cli {
         // Show the user the environment variable and let the user confirm the value to output
         self.prompt_user_env(&mut envs)?;
 
-        if self.ask_user_prompt("Do you want to add additional env ?")? {
+        if ui::confirm("Do you want to add additional env ?", false)? {
             self.process_prompt_additional_env(&mut envs)?;
         }
 
@@ -127,16 +147,22 @@ impl Cli {
         job_spec.rebuild_env(&mut envs)?;
 
         // Upgrade the resources limits if needed
-        if self.ask_user_prompt("Do you want to update the resources limits ?")? {
+        if ui::confirm("Do you want to update the resources limits ?", false)? {
             let user_asked_resources = self.process_resources_prompt(&envs)?;
             job_spec.update_resources(user_asked_resources)?;
         }
+
+        // Apply the job spec and display the output
+        let mut apply_spinner = SpinnerWrapper::new("Applying job...");
 
         let output = kube_handler
             .build_manual_job(&target_job_name, job_spec, self.backoff_limit)?
             .apply_manual_job()
             .await
             .and_then(|job| kube_handler.display_spec(job))?;
+
+        // Stop the spinner and write the output to file if needed
+        apply_spinner.stop();
 
         if let (Some(output_path), Some(contents)) = (&self.dry_run_output_path, output) {
             fs::write(PathBuf::from(output_path), contents)?;
@@ -150,36 +176,16 @@ impl Cli {
         for container in envs {
             for (name, kind) in &mut container.envs {
                 if let EnvKind::Literal(literal) = kind {
-                    match Text::new(&format!("Env for {}: ", name.bright_cyan()))
-                        .with_default(literal)
-                        .prompt()
-                    {
-                        Ok(res) => *kind = EnvKind::Literal(res),
-                        Err(err) => return Err(anyhow!("Operation canceled: {:?}", err)),
-                    }
+                    let new_value = ui::text(
+                        &format!("Env for {}: ", name.truecolor(COLOR.0, COLOR.1, COLOR.2)),
+                        Some(literal),
+                    )?;
+                    *kind = EnvKind::Literal(new_value);
                 }
             }
         }
 
         Ok(())
-    }
-
-    // Prompt the user to select an item from a list of items
-    fn prompt_user_list_selection(&self, list: Vec<String>) -> Result<String> {
-        let selected = Select::new(
-            "Select the cronjob that you want to use as a base of the job",
-            list,
-        )
-        .prompt()
-        .map_err(|_| anyhow!("An error occurred. Please try again"))?;
-
-        Ok(selected)
-    }
-
-    fn ask_user_prompt(&self, msg: &str) -> Result<bool> {
-        let res = Confirm::new(msg).with_default(false).prompt()?;
-
-        Ok(res)
     }
 
     /// Add additional environment variables to the list of existing environment variables present in the envs slice
@@ -192,11 +198,10 @@ impl Cli {
 
         // Select the container which will be used to add the additional environment variables
         let containers_name = envs.iter().map(|c| c.name.clone()).collect::<Vec<_>>();
-        let answer = Select::new(
-            "Select the container to add the additional environment variable",
+        let answer = ui::select(
+            "Select the container to add the additional environment variable".to_string(),
             containers_name,
-        )
-        .prompt()?;
+        )?;
 
         let tgt_container = envs
             .iter_mut()
@@ -204,18 +209,16 @@ impl Cli {
             .ok_or_else(|| anyhow!("Unable to found the targeted container"))?;
 
         while ask_user_additional_env {
-            if let Ok(res) = Text::new("Input the additional env separate with a =")
-                .with_validator(|s: &str| {
+            if let Ok(res) =
+                ui::text_with_validator("Input the additional env separate with a =", |s: &str| {
                     let v = s.split(SPLIT_ENV_OPERATOR).collect::<Vec<_>>();
-                    if v.len() != 2 {
-                        return Ok(Validation::Invalid(
+                    match v.len() != 2 {
+                        true => Ok(Validation::Invalid(
                             "Environment variable should respect the format: ENV_NAME=VALUE".into(),
-                        ));
+                        )),
+                        false => Ok(Validation::Valid),
                     }
-
-                    Ok(Validation::Valid)
                 })
-                .prompt()
             {
                 let properties = res.split(SPLIT_ENV_OPERATOR).collect::<Vec<_>>();
                 let (key, value) = (
@@ -234,7 +237,7 @@ impl Cli {
                 );
 
                 // Asking to the user whether it wants to add additional env
-                if !self.ask_user_prompt("Do you still want to add additional env ?")? {
+                if !ui::confirm("Do you still want to add additional env ?", false)? {
                     ask_user_additional_env = false;
                 }
             };
@@ -248,43 +251,39 @@ impl Cli {
     /// * `envs` - &[ContainerEnv]
     fn process_resources_prompt(&self, envs: &[ContainerEnv]) -> Result<SpecResources> {
         let containers_name = envs.iter().map(|c| c.name.clone()).collect::<Vec<_>>();
-        let container = Select::new(
-            "Select the container to add the additional environment variable",
+        let container = ui::select(
+            "Select the container to add the additional environment variable".to_string(),
             containers_name,
-        )
-        .prompt()?;
+        )?;
 
         // Memory
-        let memory = Text::new("Set the memory limits")
-            .with_validator(|s: &str| match s.parse::<f64>().is_ok() {
+        let memory = ui::text_with_validator("Set the memory limits", |s: &str| {
+            match s.parse::<f64>().is_ok() {
                 true => Ok(Validation::Valid),
                 false => Ok(Validation::Invalid(
                     "Memory should contains only numbers".into(),
                 )),
-            })
-            .prompt()?;
-        let memory_format = Select::new("Select a memory format", DECIMAL_SI.to_vec()).prompt()?;
+            }
+        })?;
+        let memory_format = ui::select("Select a memory format", DECIMAL_SI.to_vec())?;
 
         // Cpu
-        let cpu = Text::new("Set the cpu limits")
-            .with_validator(|s: &str| match s.parse::<f64>() {
+        let cpu =
+            ui::text_with_validator("Set the cpu limits", |s: &str| match s.parse::<f64>() {
                 Ok(v) => {
                     if v < 0.001 {
                         return Ok(Validation::Invalid(
-                            "CPU should be greater than or equal to 0.001".into(),
+                            "CPU should be greater >= to 0.001".into(),
                         ));
                     }
 
                     Ok(Validation::Valid)
                 }
-                Err(_) => Ok(Validation::Invalid(
-                    "CPU should contains numbers only".into(),
-                )),
-            })
-            .prompt()?;
-        let cpu_format = Select::new("Select a cpu format", CPU.to_vec())
-            .prompt()
-            .map(|format| match format {
+                Err(_) => Ok(Validation::Invalid("CPU should contains numbers".into())),
+            })?;
+
+        let cpu_format =
+            ui::select("Select a cpu format", CPU.to_vec()).map(|format| match format {
                 "None" => "",
                 _ => format,
             })?;

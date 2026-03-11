@@ -1,3 +1,4 @@
+use crate::cli::COLOR;
 use anyhow::{Result, anyhow};
 use colored::{self, Colorize};
 use k8s_openapi::{
@@ -187,7 +188,7 @@ where
                 job.metadata
                     .name
                     .unwrap_or_default()
-                    .truecolor(7, 174, 237)
+                    .truecolor(COLOR.0, COLOR.1, COLOR.2)
                     .bold()
             );
 
