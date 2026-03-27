@@ -5,6 +5,7 @@ use anyhow::{Result, anyhow};
 use clap::Parser;
 use colored::Colorize;
 use inquire::validator::Validation;
+use jiff::Span;
 use k8s_openapi::api::apps::v1::Deployment;
 use k8s_openapi::api::batch::v1::{CronJob, Job};
 use k8s_openapi::apimachinery::pkg::api::resource::Quantity;
@@ -27,7 +28,7 @@ pub(crate) const COLOR: (u8, u8, u8) = (180, 140, 247);
 
 #[derive(Parser)]
 #[command(
-    version = "0.2.3",
+    version = "0.2.8",
     about = "A command to dispatch a kubernetes job from a cronjob spec"
 )]
 pub struct Cli {
@@ -62,10 +63,17 @@ pub struct Cli {
         help = "Output path of the spec when the user specified to use the --dry-run option"
     )]
     pub dry_run_output_path: Option<String>,
+
+    #[arg(long, help = "Wait for the job to complete before exiting")]
+    pub wait: Option<Span>,
 }
 
 impl Cli {
     pub async fn run<S: AsRef<str>>(&self, kube_handler: &mut KubeHandler<S>) -> Result<()> {
+        if self.dry_run && self.wait.is_some() {
+            return Err(anyhow!("Cannot use --wait with --dry-run"));
+        }
+
         let name = match &self.job_name {
             Some(name) => name.to_owned(),
             None => {
@@ -153,16 +161,29 @@ impl Cli {
         }
 
         // Apply the job spec and display the output
-        let mut apply_spinner = SpinnerWrapper::new("Applying job...");
+        let mut apply_spinner = match self.dry_run {
+            true => SpinnerWrapper::new("Running a dry-run job..."),
+            false => SpinnerWrapper::new("Applying job..."),
+        };
 
-        let output = kube_handler
+        let job = kube_handler
             .build_manual_job(&target_job_name, job_spec, self.backoff_limit)?
             .apply_manual_job()
-            .await
-            .and_then(|job| kube_handler.display_spec(job))?;
+            .await?;
 
-        // Stop the spinner and write the output to file if needed
-        apply_spinner.stop();
+        let output = kube_handler
+            .wait_for_job(job, self.wait)
+            .await
+            .and_then(|job| {
+                // stop the spinner before displaying the output
+                apply_spinner.stop();
+
+                kube_handler.display_spec(job)
+            })
+            .inspect_err(|_| {
+                // stop the spinner before returning an error
+                apply_spinner.stop();
+            })?;
 
         if let (Some(output_path), Some(contents)) = (&self.dry_run_output_path, output) {
             fs::write(PathBuf::from(output_path), contents)?;

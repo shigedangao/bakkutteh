@@ -57,3 +57,13 @@ Getting cronjob my-cronjob from namespace default
 > Env for ADDITIONAL_VAR:  hello dodo !
 Job hello-dodo-manual created
 ```
+
+### Wait for the job to be completed
+
+It's also possible to wait for the job to be completed before the commande exit. Below is an example
+
+```sh
+bakkutteh -t jojolol --wait 10s
+```
+
+The command will wait for 10s before exiting. If the job takes more time to run the command will then returns an error.
