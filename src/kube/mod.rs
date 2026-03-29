@@ -1,6 +1,7 @@
 use crate::cli::COLOR;
-use anyhow::{Result, anyhow};
+use anyhow::{Ok, Result, anyhow};
 use colored::{self, Colorize};
+use jiff::Span;
 use k8s_openapi::{
     NamespaceResourceScope,
     api::batch::v1::{Job, JobSpec, JobTemplateSpec},
@@ -9,9 +10,10 @@ use k8s_openapi::{
 use kube::{
     Client, Resource,
     api::{Api, DeleteParams, ListParams, PostParams},
+    runtime::{conditions::is_job_completed, wait::await_condition},
 };
 use serde_json::json;
-use std::fmt::Debug;
+use std::{fmt::Debug, time::Duration};
 use template::TemplateSpecOps;
 
 pub(crate) mod spec;
@@ -172,6 +174,34 @@ where
         };
 
         let job = job_api.create(&pp, job).await?;
+
+        Ok(job)
+    }
+
+    /// Wait for the job to complete by polling the pod associated with the job.
+    ///
+    /// # Arguments
+    ///
+    /// * `job` - The job to wait for.
+    /// * `wait` - The duration to wait for the job to complete.
+    pub async fn wait_for_job(&self, job: Job, wait: Option<Span>) -> Result<Job> {
+        let duration = match wait {
+            Some(dur) => Duration::try_from(dur)?,
+            None => return Ok(job),
+        };
+
+        let name = match &job.metadata.name {
+            Some(name) => name,
+            None => return Ok(job),
+        };
+
+        // Create a pod_api in order to retrieve the list of pod associated with the job.
+        let job_api: Api<Job> = Api::namespaced(self.client.clone(), self.namespace.as_ref());
+
+        let conds = await_condition(job_api, name, is_job_completed());
+        let _ = tokio::time::timeout(duration, conds).await.map_err(|_| {
+            anyhow!("Job with name {name} may take more time than the maximum wait duration")
+        })?;
 
         Ok(job)
     }
