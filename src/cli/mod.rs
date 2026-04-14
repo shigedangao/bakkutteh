@@ -28,7 +28,7 @@ pub(crate) const COLOR: (u8, u8, u8) = (180, 140, 247);
 
 #[derive(Parser)]
 #[command(
-    version = "0.2.8",
+    version = "0.2.9",
     about = "A command to dispatch a kubernetes job from a cronjob spec"
 )]
 pub struct Cli {

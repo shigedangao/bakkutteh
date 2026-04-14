@@ -9,6 +9,9 @@ use inquire::{
 use spinners::{Spinner, Spinners};
 use std::fmt;
 
+// Constant
+const SELECT_PAGE_SIZE: usize = 20;
+
 /// SpinnerWrapper is a wrapper around the spinners::Spinner struct
 pub struct SpinnerWrapper(Spinner);
 
@@ -41,7 +44,7 @@ pub fn text<S: AsRef<str>>(title: S, default_value: Option<S>) -> Result<String>
     }
 
     match text.prompt() {
-        Ok(res) => Ok(res),
+        Ok(res) => Ok(res.trim().to_string()),
         Err(err) => Err(anyhow!("Operation canceled: {:?}", err)),
     }
 }
@@ -69,7 +72,10 @@ pub fn text_with_validator<S: AsRef<str>, F: StringValidator>(
 /// * `msg` - S
 /// * `list` - Vec<S>
 pub fn select<S: AsRef<str> + fmt::Display>(msg: S, list: Vec<S>) -> Result<S> {
-    match Select::new(msg.as_ref(), list).prompt() {
+    match Select::new(msg.as_ref(), list)
+        .with_page_size(SELECT_PAGE_SIZE)
+        .prompt()
+    {
         Ok(res) => Ok(res),
         Err(err) => Err(anyhow!("Unable to select the element due to: {err}")),
     }
