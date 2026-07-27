@@ -11,8 +11,8 @@ inquire = "0.9.4"
 jiff = "0.2.35"
 k8s-openapi = { version = "0.28.0", features = ["latest", "schemars"] }
 kube = { version = "4.2.0", features = ["runtime", "derive"] }
+noyalib = "0.0.17"
 schemars = { version = "1" }
 serde_json = "1.0.151"
-noyalib = "0.0.17"
 spinners = "4.2.0"
 tokio = { version = "1.53.1", features = ["full"] }
