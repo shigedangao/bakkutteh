@@ -249,7 +249,8 @@ where
             .and_then(|selector| selector.match_labels.as_mut())
             .map(|selector| selector.remove(BATCH_UID_REMOVE));
 
-        let yaml = serde_yml::to_string(&job)?;
+        let yaml = noyalib::to_string(&job)
+            .map_err(|err| anyhow!("Unable to encode the yaml to string due to: {err}"))?;
 
         if !self.dry_run_output_path {
             println!(
