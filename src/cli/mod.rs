@@ -1,13 +1,17 @@
 use crate::cli::ui::SpinnerWrapper;
-use crate::kube::KubeHandler;
-use crate::kube::spec::{ContainerEnv, EnvKind, SpecHandler, SpecResources};
+use crate::kube::{
+    KubeHandler,
+    spec::{ContainerEnv, EnvKind, SpecHandler, SpecResources},
+};
 use anyhow::{Result, anyhow};
 use clap::Parser;
 use colored::Colorize;
 use inquire::validator::Validation;
 use jiff::Span;
-use k8s_openapi::api::apps::v1::Deployment;
-use k8s_openapi::api::batch::v1::{CronJob, Job};
+use k8s_openapi::api::{
+    apps::v1::Deployment,
+    batch::v1::{CronJob, Job},
+};
 use k8s_openapi::apimachinery::pkg::api::resource::Quantity;
 use std::fs;
 use std::path::PathBuf;
@@ -28,7 +32,7 @@ pub(crate) const COLOR: (u8, u8, u8) = (180, 140, 247);
 
 #[derive(Parser)]
 #[command(
-    version = "0.2.9",
+    version = "0.3.1",
     about = "A command to dispatch a kubernetes job from a cronjob spec"
 )]
 pub struct Cli {
@@ -160,6 +164,12 @@ impl Cli {
             job_spec.update_resources(user_asked_resources)?;
         }
 
+        // Update the image if needed
+        if ui::confirm("Do you want to update the image ?", false)? {
+            let (container, image) = self.process_image_prompt(&envs)?;
+            job_spec.update_image(container, image)?;
+        }
+
         // Apply the job spec and display the output
         let mut apply_spinner = match self.dry_run {
             true => SpinnerWrapper::new("Running a dry-run job..."),
@@ -269,11 +279,16 @@ impl Cli {
 
     /// Ask desired resources to the user for the targeted container. The envs is only used to get the name list of the containers
     ///
+    /// # Arguments
     /// * `envs` - &[ContainerEnv]
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Result` containing the `SpecResources` struct.
     fn process_resources_prompt(&self, envs: &[ContainerEnv]) -> Result<SpecResources> {
-        let containers_name = envs.iter().map(|c| c.name.clone()).collect::<Vec<_>>();
+        let containers_name = envs.iter().map(|c| c.name.as_str()).collect::<Vec<_>>();
         let container = ui::select(
-            "Select the container to add the additional environment variable".to_string(),
+            "Select the container to add the additional environment variable",
             containers_name,
         )?;
 
@@ -312,7 +327,39 @@ impl Cli {
         Ok(SpecResources {
             memory: Quantity(format!("{memory}{memory_format}")),
             cpu: Quantity(format!("{cpu}{cpu_format}")),
-            container_name: container,
+            container_name: container.to_string(),
         })
+    }
+
+    /// Prompts the user to select a container and input an image name and tag.
+    ///
+    /// # Arguments
+    ///
+    /// * `envs` - A slice of `ContainerEnv` structs representing the container environments.
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Result` containing a tuple of the selected container name and the image name and tag.
+    fn process_image_prompt(&self, envs: &[ContainerEnv]) -> Result<(String, String)> {
+        let containers = envs.iter().map(|c| c.name.as_str()).collect::<Vec<_>>();
+
+        let selected_container = ui::select(
+            "Select the container which you want to update the image",
+            containers,
+        )?;
+
+        // Dumb validation here but just ensure that a kubernetes image is defined by having a colon separator so that it respects the following convention <image>:<tag>
+        let image = ui::text_with_validator(
+            "Input the image name and it's tag such as it follows this example <image>:<tag>",
+            |s: &str| {
+                if s.contains(":") {
+                    return Ok(Validation::Valid);
+                }
+
+                Ok(Validation::Invalid("foo".into()))
+            },
+        )?;
+
+        Ok((selected_container.to_string(), image))
     }
 }

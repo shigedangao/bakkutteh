@@ -42,6 +42,14 @@ pub trait SpecHandler {
     ///
     /// * `resources` - (SpecResources, String)
     fn update_resources(&mut self, resources: SpecResources) -> Result<()>;
+
+    /// Update the image source of the container
+    ///
+    /// # Arguments
+    ///
+    /// * `image` - S
+    /// * `container_name` - S
+    fn update_image<S: AsRef<str>>(&mut self, image: S, container_name: S) -> Result<()>;
 }
 
 impl SpecHandler for JobSpec {
@@ -186,6 +194,24 @@ impl SpecHandler for JobSpec {
                 })
             }
         };
+
+        Ok(())
+    }
+
+    fn update_image<S: AsRef<str>>(&mut self, container_name: S, image: S) -> Result<()> {
+        let Some(tmpl) = self.template.spec.as_mut() else {
+            return Err(anyhow!("Unable to get the spec of the template"));
+        };
+
+        let Some(container) = tmpl
+            .containers
+            .iter_mut()
+            .rfind(|ct| ct.name == container_name.as_ref())
+        else {
+            return Err(anyhow!("Unable to get the targeted container"));
+        };
+
+        container.image = Some(image.as_ref().to_string());
 
         Ok(())
     }
