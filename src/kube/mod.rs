@@ -103,7 +103,7 @@ where
         K: Resource + Clone + Debug + DeserializeOwned + TemplateSpecOps,
         <K as Resource>::DynamicType: Default,
     {
-        let object: K = self.get_object(name.as_ref()).await?;
+        let mut object: K = self.get_object(name.as_ref()).await?;
         object
             .get_template_spec()
             .ok_or_else(|| anyhow!("Unable to get the template spec for {}", name.as_ref()))

@@ -7,7 +7,6 @@ use inquire::{
     validator::StringValidator,
 };
 use spinners::{Spinner, Spinners};
-use std::fmt;
 
 // Constant
 const SELECT_PAGE_SIZE: usize = 20;
@@ -71,7 +70,7 @@ pub fn text_with_validator<S: AsRef<str>, F: StringValidator>(
 ///
 /// * `msg` - S
 /// * `list` - Vec<S>
-pub fn select<S: AsRef<str> + fmt::Display>(msg: S, list: Vec<S>) -> Result<S> {
+pub fn select<S: AsRef<str> + std::fmt::Display>(msg: S, list: Vec<S>) -> Result<S> {
     match Select::new(msg.as_ref(), list)
         .with_page_size(SELECT_PAGE_SIZE)
         .prompt()
@@ -94,44 +93,52 @@ pub fn confirm<S: AsRef<str>>(msg: S, default_value: bool) -> Result<bool> {
         .map_err(|err| anyhow!("Unable to get the confirmation from the user: {err}"))
 }
 
-/// Initializes the Clack purple theme for the UI components. (done by Claude).
+/// Initializes the Clack purple theme for the UI components (Initially done by Claude as styling skill aren't my best).
 pub fn init_clack_purple_theme() {
-    let mut config = RenderConfig::default();
-
     let bright = Color::rgb(237, 233, 254); // near-white purple tint — answers
     let muted = Color::rgb(148, 163, 184); // slate — secondary elements
     let lavender = Color::rgb(168, 85, 247); // electric violet — main accent
     let rose = Color::rgb(251, 113, 133); // errors only
 
     // ── Prompt state symbols ──
-    config.prompt_prefix = Styled::new("◆").with_fg(lavender);
-    config.answered_prompt_prefix = Styled::new("◇").with_fg(muted);
-    config.canceled_prompt_indicator = Styled::new("◈  canceled").with_fg(muted);
+    let mut config = RenderConfig::default()
+        .with_prompt_prefix(Styled::new("◆").with_fg(lavender))
+        .with_answered_prompt_prefix(Styled::new("◇").with_fg(muted))
+        .with_canceled_prompt_indicator(Styled::new("◈  canceled").with_fg(muted));
 
     // ── Option navigation ──
-    config.highlighted_option_prefix = Styled::new("❯").with_fg(lavender);
-    config.unhighlighted_option_prefix = Styled::new(" ").with_fg(muted);
-    config.scroll_up_prefix = Styled::new("  ↑").with_fg(muted);
-    config.scroll_down_prefix = Styled::new("  ↓").with_fg(muted);
+    config
+        .with_highlighted_option_prefix(Styled::new("❯").with_fg(lavender))
+        .with_scroll_up_prefix(Styled::new("  ↑").with_fg(muted))
+        .with_scroll_down_prefix(Styled::new("  ↓").with_fg(muted));
 
     // ── Checkboxes ──
-    config.selected_checkbox = Styled::new("◼").with_fg(lavender);
-    config.unselected_checkbox = Styled::new("◻").with_fg(muted);
+    config
+        .with_selected_checkbox(Styled::new("◼").with_fg(lavender))
+        .with_unselected_checkbox(Styled::new("◻").with_fg(muted));
 
     // ── Text styles ──
-    config.answer = StyleSheet::new()
-        .with_fg(bright)
-        .with_attr(Attributes::BOLD);
-    config.selected_option = Some(
-        StyleSheet::new()
-            .with_fg(bright)
-            .with_attr(Attributes::BOLD),
-    );
-    config.help_message = StyleSheet::new()
-        .with_fg(muted)
-        .with_attr(Attributes::ITALIC);
+    config
+        .with_answer(
+            StyleSheet::new()
+                .with_fg(bright)
+                .with_attr(Attributes::BOLD),
+        )
+        .with_selected_option(Some(
+            StyleSheet::new()
+                .with_fg(bright)
+                .with_attr(Attributes::BOLD),
+        ));
+
+    config
+        .with_help_message(
+            StyleSheet::new()
+                .with_fg(muted)
+                .with_attr(Attributes::ITALIC),
+        )
+        .with_default_value(StyleSheet::new().with_fg(muted));
+
     config.placeholder = StyleSheet::new().with_fg(muted);
-    config.default_value = StyleSheet::new().with_fg(muted);
 
     // ── Indexing & errors ──
     config.option_index_prefix = IndexPrefix::None;
